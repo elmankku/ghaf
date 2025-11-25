@@ -7,7 +7,6 @@ result*
 ghaf-host.qcow2
 .direnv/
 .idea
-linux-*/
 gcroot/
 .pre-commit-config.yaml
 .aider*
