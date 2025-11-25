@@ -1,0 +1,11 @@
+# Copyright 2022-2025 TII (SSRC) and the Ghaf contributors
+# SPDX-License-Identifier: Apache-2.0
+{
+  linux-pkvm-x86,
+  argsOverride ? { },
+  ...
+}:
+linux-pkvm-x86.override {
+  isGuest = true;
+  inherit argsOverride;
+}
