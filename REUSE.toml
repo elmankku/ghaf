@@ -160,3 +160,11 @@ path = [
 SPDX-License-Identifier = "MIT"
 SPDX-FileCopyrightText = "igt-gpu-tools contributors"
 path = "overlays/custom-packages/intel-gpu-tools/feat-dynamically-detect-iGPU-PCI-address-at-runtime.patch"
+
+[[annotations]]
+SPDX-License-Identifier = "GPL-2.0-only"
+SPDX-FileCopyrightText = [
+  "qboot contributors",
+  "2025 TII (SSRC) and the Ghaf contributors",
+]
+path = ["packages/pkgs-by-name/qboot-pkvm/*.patch"]
