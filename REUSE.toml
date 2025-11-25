@@ -188,3 +188,11 @@ path = "overlays/jetpack-nvdisplay/*.patch"
 SPDX-License-Identifier = "BSD-3-Clause"
 SPDX-FileCopyrightText = "2022-2026 TII (SSRC) and the Ghaf contributors"
 path = "packages/pkgs-by-name/pkvm-crosvm/*.patch"
+
+[[annotations]]
+SPDX-License-Identifier = "GPL-2.0-only"
+SPDX-FileCopyrightText = [
+  "qboot contributors",
+  "2025 TII (SSRC) and the Ghaf contributors",
+]
+path = ["packages/pkgs-by-name/pkvm-qboot/*.patch"]

@@ -32,6 +32,7 @@
     memsocket = final.callPackage ./pkgs-by-name/memsocket/package.nix { };
     pci-binder = final.callPackage ./pkgs-by-name/pci-binder/package.nix { };
     pkvm-crosvm = final.callPackage ./pkgs-by-name/pkvm-crosvm/package.nix { };
+    pkvm-qboot = final.callPackage ./pkgs-by-name/pkvm-qboot/package.nix { };
     rtl8126 = final.callPackage ./pkgs-by-name/rtl8126/package.nix { };
     update-docs-depends = final.callPackage ./pkgs-by-name/update-docs-depends/package.nix { };
     user-provision = final.callPackage ./pkgs-by-name/user-provision/package.nix { };
