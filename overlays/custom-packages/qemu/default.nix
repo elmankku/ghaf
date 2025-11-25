@@ -22,6 +22,8 @@ prev.qemu_kvm.overrideAttrs (
         ./0002-hw-acpi-Introduce-the-QEMU-Battery.patch
         ./0003-hw-acpi-Introduce-the-QEMU-AC-adapter.patch
         ./0004-hw-acpi-Introduce-the-QEMU-lid-button.patch
+        # pKVM-x86 support: https://github.com/jkrh/pkvm-x86
+        ./0001-qemu-Add-support-for-pKVM.patch
       ];
   })
   // {
