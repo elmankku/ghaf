@@ -59,7 +59,7 @@ in
   };
 
   config = lib.mkIf pkgs.stdenv.hostPlatform.isx86_64 {
-    boot.kernelPackages = kernelPackages;
+    boot.kernelPackages = if cfg.enable then kernelPackages else lib.mkDefault kernelPackages;
 
     boot.kernelPatches = lib.optionals gpuSuspend [
       {

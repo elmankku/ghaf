@@ -20,6 +20,8 @@ let
   };
 
   cfg = config.ghaf.host.kernel.hardening;
+  kernelPackages =
+    if cfg.enable then pkgs.linuxPackagesFor host_hardened_kernel else pkgs.linuxPackages_latest;
 in
 {
   _file = ./default.nix;
@@ -39,8 +41,7 @@ in
   };
 
   config = mkIf pkgs.stdenv.hostPlatform.isx86_64 {
-    boot.kernelPackages =
-      if cfg.enable then pkgs.linuxPackagesFor host_hardened_kernel else pkgs.linuxPackages_latest;
+    boot.kernelPackages = if cfg.enable then kernelPackages else lib.mkDefault kernelPackages;
 
     # TODO: do we still need this when building our own kernel?
     # https://github.com/NixOS/nixpkgs/issues/109280#issuecomment-973636212
