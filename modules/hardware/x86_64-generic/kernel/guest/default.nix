@@ -33,7 +33,6 @@ in
   };
 
   config = lib.mkIf pkgs.stdenv.hostPlatform.isx86_64 {
-    boot.kernelPackages =
-      if cfg.enable then pkgs.linuxPackagesFor guest_hardened_kernel else pkgs.linuxPackages_latest;
+    boot.kernelPackages = lib.mkIf cfg.enable (pkgs.linuxPackagesFor guest_hardened_kernel);
   };
 }
