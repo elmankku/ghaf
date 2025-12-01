@@ -61,8 +61,7 @@ in
   };
 
   config = mkIf pkgs.stdenv.hostPlatform.isx86_64 {
-    boot.kernelPackages =
-      if cfg.enable then pkgs.linuxPackagesFor host_hardened_kernel else pkgs.linuxPackages_latest;
+    boot.kernelPackages = mkIf cfg.enable (pkgs.linuxPackagesFor host_hardened_kernel);
 
     # TODO: do we still need this when building our own kernel?
     # https://github.com/NixOS/nixpkgs/issues/109280#issuecomment-973636212
