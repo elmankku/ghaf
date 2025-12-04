@@ -26,5 +26,8 @@
       ./aarch64/systemd-boot-dtb.nix
       ./passthrough
     ];
+    hardware-x86_64-hypervisor.imports = [
+      ./x86_64-generic/hypervisor
+    ];
   };
 }
