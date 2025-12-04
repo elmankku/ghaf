@@ -32,6 +32,7 @@ let
                 hardware.x86_64.common.enable = true;
                 hardware.tpm2.enable = true;
                 microvm-boot.enable = lib.mkForce false;
+                virtualization.pkvm.enable = true;
 
                 virtualization = {
                   microvm-host = {
