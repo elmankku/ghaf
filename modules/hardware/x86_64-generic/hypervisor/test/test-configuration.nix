@@ -6,7 +6,7 @@
 
   # pkvm hardening is generic to all x86_64 devices
   config = {
-    ghaf.host.kernel.hardening.hypervisor.enable = true;
+    ghaf.virtualization.pkvm.enable = true;
 
     # required to module test a module via top level configuration
     boot.loader.systemd-boot.enable = true;
