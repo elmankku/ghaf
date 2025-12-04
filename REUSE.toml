@@ -132,7 +132,6 @@ path = [
   "modules/reference/hardware/jetpack/nvidia-jetson-orin/virtualization/common/dce-virt-common/patches/*.patch",
   "modules/reference/hardware/jetpack/nvidia-jetson-orin/virtualization/common/dce-virt-common/sources/drivers/platform/tegra/dce-guest-proxy/*",
   "modules/reference/hardware/jetpack/nvidia-jetson-orin/virtualization/common/dce-virt-common/sources/drivers/platform/tegra/dce-host-proxy/*",
-  "modules/hardware/x86_64-generic/kernel/pkvm/0001-pkvm-enable-pkvm-on-intel-x86-6.1-lts.patch",
   "modules/microvm/sysvms/0001-x86-gpu-Don-t-reserve-stolen-memory-for-GPU-passthro.patch",
   "modules/reference/hardware/jetpack/nvidia-jetson-orin/virtualization/passthrough/uarti-net-vm/tegra234-netvm.dts"
 ]
