@@ -43,6 +43,7 @@ let
           formatModules.${format}
           self.nixosModules.profiles-vm
           self.nixosModules.hardware-x86_64-generic
+          self.nixosModules.hardware-x86_64-hypervisor
 
           (
             { config, pkgs, ... }:
@@ -96,6 +97,9 @@ let
               };
               # Reference to profile for convenience
               vmProfile = config.ghaf.profiles.vm;
+
+              # Enable pKVM for variants that include "pkvm", only for qemu-vm format
+              withPkvm = format == "vm" && lib.hasInfix "pkvm" variant;
             in
             {
               environment.systemPackages = lib.optionals withGraphics [
@@ -112,6 +116,8 @@ let
                 microvm-boot.enable = lib.mkForce false;
 
                 virtualization = {
+                  pkvm.enable = withPkvm;
+
                   microvm-host = {
                     enable = true;
                     networkSupport = true;
@@ -221,7 +227,7 @@ let
                   graphics = {
                     enable = withGraphics;
                   };
-                  release.enable = variant == "release";
+                  release.enable = lib.hasPrefix "release" variant;
                   debug.enable = lib.hasPrefix "debug" variant;
                 };
               };
@@ -266,7 +272,10 @@ let
                 useNixStoreImage = true;
                 writableStore = true;
                 cores = 4;
-                memorySize = 8 * 1024;
+
+                # pKVM cannot reuse pages
+                memorySize = if withPkvm && withGraphics then 20 * 1024 else 8 * 1024;
+
                 forwardPorts = [
                   {
                     from = "host";
@@ -275,6 +284,17 @@ let
                   }
                 ];
                 tpm.enable = true;
+
+                # QEMU options when executing pKVM within KVM
+                qemu.options = lib.optionals withPkvm [
+                  "-machine q35,mem-merge=off,accel=kvm,kernel-irqchip=split"
+                  "-device intel-iommu,aw-bits=48,device-iotlb=on,intremap=on"
+                  "-overcommit cpu-pm=off"
+                  # Paravirtualizations must be disabled
+                  "-cpu host,+kvm-pv-enforce-cpuid,+vmx,+waitpkg,+ssse3,+tsc,+nx,+x2apic,+hypervisor,-kvm-pv-ipi,-kvm-pv-tlb-flush,-kvm-pv-unhalt,-kvm-pv-sched-yield,-kvm-asyncpf-int,-kvm-pv-eoi"
+                  "-device e1000,netdev=net0"
+                  "-netdev user,id=net0"
+                ];
               };
             }
           )
@@ -289,7 +309,10 @@ let
   targets = [
     (vm "vm" "debug" true)
     (vm "vm" "debug-nogui" false)
+    (vm "vm" "debug-pkvm" true)
+    (vm "vm" "debug-pkvm-nogui" false)
     (vm "vm" "release" true)
+    (vm "vm" "release-pkvm" true)
     (vm "vmware" "debug" true)
   ];
 in
