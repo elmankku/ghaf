@@ -36,6 +36,10 @@ let
       };
     };
   };
+
+  # The guests are protected VMs by default, but it is possible to opt-out of
+  # the default configuration by setting pkvm.<vm>.protectedGuest = false.
+  isProtectedGuest = vmName: cfg.enable && (cfg.guests.${vmName}.protectedGuest or true);
 in
 {
   options.ghaf.virtualization.pkvm = {
@@ -43,6 +47,22 @@ in
       description = "Enable pKVM hypervisor";
       type = lib.types.bool;
       default = false;
+    };
+
+    guests = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            protectedGuest = lib.mkOption {
+              description = "Controls whether this guest is a pKVM protected VM.";
+              type = lib.types.bool;
+              default = true;
+            };
+          };
+        }
+      );
+      description = "pKVM settings for individual guest VMs";
+      default = { };
     };
   };
 
@@ -58,12 +78,15 @@ in
         "console=ttyS0"
       ];
     })
-    (lib.mkIf cfg.enable {
-      ghaf.virtualization.microvm = lib.mapAttrs (_vmName: _vmCfg: {
-        extraModules = lib.mkAfter [
-          pkvmGuestModule
-        ];
-      }) allVms;
-    })
+    {
+      ghaf.virtualization.microvm = lib.mapAttrs (
+        vmName: _vmCfg:
+        lib.optionalAttrs (isProtectedGuest vmName) {
+          extraModules = lib.mkAfter [
+            pkvmGuestModule
+          ];
+        }
+      ) allVms;
+    }
   ];
 }
