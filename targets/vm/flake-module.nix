@@ -23,6 +23,7 @@ let
           self.nixosModules.profiles
           self.nixosModules.reference-appvms
           self.nixosModules.hardware-x86_64-generic
+          self.nixosModules.hardware-x86_64-hypervisor
 
           (
             { config, pkgs, ... }:
@@ -187,21 +188,37 @@ let
                 overlays = [ self.overlays.default ];
               };
 
-              virtualisation = lib.optionalAttrs (format == "vm") {
-                graphics = withGraphics;
-                useNixStoreImage = true;
-                writableStore = true;
-                cores = 4;
-                memorySize = 8 * 1024;
-                forwardPorts = [
-                  {
-                    from = "host";
-                    host.port = 8022;
-                    guest.port = 22;
-                  }
-                ];
-                tpm.enable = true;
-              };
+              virtualisation =
+                let
+                  withPkvm = config.ghaf.virtualization.pkvm.enable;
+                in
+                lib.optionalAttrs (format == "vm") {
+                  graphics = withGraphics;
+                  useNixStoreImage = true;
+                  writableStore = true;
+                  cores = 4;
+
+                  # pKVM cannot reuse pages
+                  memorySize = if withPkvm && withGraphics then 20 * 1024 else 8 * 1024;
+
+                  forwardPorts = [
+                    {
+                      from = "host";
+                      host.port = 8022;
+                      guest.port = 22;
+                    }
+                  ];
+                  tpm.enable = true;
+
+                  # QEMU options when executing pKVM within KVM
+                  qemu.options = lib.optionals withPkvm [
+                    "-machine q35,mem-merge=off,accel=kvm,kernel-irqchip=on"
+                    "-device intel-iommu,aw-bits=48,device-iotlb=on"
+                    "-overcommit cpu-pm=off"
+                    # Paravirtualizations must be disabled
+                    "-cpu host,+kvm-pv-enforce-cpuid,+vmx,+waitpkg,+ssse3,+tsc,+nx,+x2apic,+hypervisor,-kvm-pv-ipi,-kvm-pv-tlb-flush,-kvm-pv-unhalt,-kvm-pv-sched-yield,-kvm-asyncpf-int,-kvm-pv-eoi"
+                  ];
+                };
             }
           )
         ];
