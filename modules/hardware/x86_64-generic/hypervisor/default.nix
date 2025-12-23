@@ -39,7 +39,11 @@ let
           "-overcommit"
           "mem-lock=on"
         ];
+
+        package = pkgs.qemu-pkvm;
       };
+
+      virtiofsd.package = pkgs.virtiofsd-pkvm;
     };
   };
 

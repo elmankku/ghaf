@@ -21,7 +21,6 @@
   osquery-with-hostname = import ./osquery-with-hostname { inherit prev; };
   papirus-icon-theme = import ./papirus-icon-theme { inherit prev; };
   spire = import ./spire { inherit prev; };
-  virtiofsd = import ./virtiofsd { inherit prev; };
   xdg-desktop-portal-cosmic = import ./cosmic/xdg-desktop-portal-cosmic { inherit prev; };
 })
 # keep-sorted end
