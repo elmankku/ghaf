@@ -26,6 +26,7 @@ let
     self.nixosModules.verity-release-partition
     self.nixosModules.reference-profiles
     self.nixosModules.profiles
+    self.nixosModules.hardware-x86_64-hypervisor
   ];
 
   # concatinate modules that are specific to a target
@@ -166,6 +167,7 @@ let
         ghaf = {
           reference.profiles.mvp-user-trial.enable = true;
           partitioning.disko.enable = true;
+          virtualization.pkvm.enable = true;
         };
       }
     ]))

@@ -66,7 +66,8 @@ in
       type = lib.types.listOf lib.types.str;
       default = [
         "kvm-intel.pkvm=1"
-        "intel_iommu=sm_on"
+        "intel_iommu=on,sm_on"
+        "iommu=pt"
         # FIXME: DEBUGGING
         "earlyprintk=ttyS0"
         "ignore_loglevel"
