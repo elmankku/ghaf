@@ -4,14 +4,21 @@
   config,
   lib,
   pkgs,
-  options,
   ...
 }:
 let
   cfg = config.ghaf.virtualization.pkvm;
-  allVms = lib.filterAttrs (_name: vmCfg: vmCfg ? extraModules) options.ghaf.virtualization.microvm;
+  # Enabled-only VM discovery to avoid touching disabled VMs.
+  enabledSysVms = config.ghaf.virtualization.microvm.sysvm.enabledVms;
+  enabledAppVms = config.ghaf.virtualization.microvm.appvm.enabledVms;
+  allVms = lib.unique ((lib.attrNames enabledSysVms) ++ (lib.attrNames enabledAppVms));
 
   guestConfig = vmName: cfg.guests.${vmName};
+  mkPkvmEvaluatedConfig =
+    vmName: evaluatedConfig:
+    evaluatedConfig.extendModules {
+      modules = [ (pkvmGuestModule (guestConfig vmName)) ];
+    };
 
   pkvmGuestModule = vmCfg: {
     boot.kernelPackages = pkgs.linuxPackagesFor vmCfg.kernelPackage;
@@ -50,6 +57,30 @@ let
   # The guests are protected VMs by default, but it is possible to opt-out
   # by setting pkvm.<vm>.enableConfig = false.
   isConfigEnabled = vmName: cfg.enable && (guestConfig vmName).enableConfig;
+
+  sysVmOverrides = lib.foldl' lib.recursiveUpdate { } (
+    lib.mapAttrsToList (
+      vmType: vmCfg:
+      lib.optionalAttrs (isConfigEnabled vmType && vmCfg.evaluatedConfig != null) {
+        "${vmCfg.vmName}" = {
+          # We must use mkForce to ensure pKVM settings are applied
+          evaluatedConfig = lib.mkForce (mkPkvmEvaluatedConfig vmType vmCfg.evaluatedConfig);
+        };
+      }
+    ) enabledSysVms
+  );
+
+  appVmOverrides = lib.foldl' lib.recursiveUpdate { } (
+    lib.mapAttrsToList (
+      vmType: vmCfg:
+      lib.optionalAttrs (isConfigEnabled vmType && vmCfg.evaluatedConfig != null) {
+        "${vmCfg.name}-vm" = {
+          # We must use mkForce to ensure pKVM settings are applied
+          evaluatedConfig = lib.mkForce (mkPkvmEvaluatedConfig vmType vmCfg.evaluatedConfig);
+        };
+      }
+    ) enabledAppVms
+  );
 in
 {
   _file = ./default.nix;
@@ -114,21 +145,14 @@ in
 
   config = lib.mkMerge [
     {
-      ghaf.virtualization.pkvm.guests = lib.genAttrs (lib.attrNames allVms) (_vmName: { });
+      ghaf.virtualization.pkvm.guests = lib.genAttrs allVms (_vmName: { });
     }
     (lib.mkIf cfg.enable {
       boot.kernelPackages = pkgs.linuxPackagesFor cfg.hostKernelPackage;
       boot.kernelParams = lib.mkAfter cfg.hostKernelParams;
     })
     {
-      ghaf.virtualization.microvm = lib.mapAttrs (
-        vmName: _vmCfg:
-        lib.optionalAttrs (isConfigEnabled vmName) {
-          extraModules = lib.mkAfter [
-            (pkvmGuestModule (guestConfig vmName))
-          ];
-        }
-      ) allVms;
+      microvm.vms = lib.recursiveUpdate sysVmOverrides appVmOverrides;
     }
   ];
 }
