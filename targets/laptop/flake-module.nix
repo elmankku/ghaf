@@ -31,6 +31,7 @@ let
     self.nixosModules.verity-release-partition
     self.nixosModules.reference-profiles
     self.nixosModules.profiles
+    self.nixosModules.hardware-x86_64-hypervisor
   ];
 
   installerModules = [
@@ -621,6 +622,20 @@ let
     # keep-sorted end
   ];
 
+  generate-pkvm-target =
+    t:
+    t
+    // rec {
+      name = "${t.name}-pkvm";
+      hostConfiguration = t.hostConfiguration.extendModules {
+        modules = [ { ghaf.virtualization.pkvm.enable = true; } ];
+      };
+      package = hostConfiguration.config.system.build.ghafImage;
+    };
+
+  pkvm-target-configs = map generate-pkvm-target target-configs;
+  all-target-configs = target-configs ++ pkvm-target-configs;
+
   # Map all of the defined configurations to an installer image. Each installer
   # reuses the shared base NixOS evaluation and only overrides ISO contents.
   target-installers = map (
@@ -629,7 +644,7 @@ let
       inherit (t) name;
       imagePath = self.packages.x86_64-linux.${t.name};
     }
-  ) target-configs;
+  ) all-target-configs;
 
   target-sysupdates = map (
     t:
@@ -641,10 +656,10 @@ let
     // {
       name = "${t.name}-sysupdate";
     }
-  ) (builtins.filter (x: x.buildSysupdateImage) target-configs);
+  ) (builtins.filter (x: x.buildSysupdateImage) all-target-configs);
 
-  config-targets = target-configs ++ target-sysupdates;
-  package-targets = target-configs ++ target-installers ++ target-sysupdates;
+  config-targets = all-target-configs ++ target-sysupdates;
+  package-targets = all-target-configs ++ target-installers ++ target-sysupdates;
 in
 {
   flake = {
