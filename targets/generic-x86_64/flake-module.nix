@@ -17,6 +17,7 @@ let
   generic-x86 =
     variant: extraModules:
     let
+      withPkvm = lib.hasInfix "pkvm" variant;
       netvmExtraModules = [
         {
           microvm.devices = [
@@ -51,6 +52,7 @@ let
           )
           self.nixosModules.microvm
           self.nixosModules.hardware-x86_64-generic
+          self.nixosModules.hardware-x86_64-hypervisor
           self.nixosModules.profiles
           self.nixosModules.reference-host-demo-apps
           self.nixosModules.reference-programs
@@ -117,6 +119,7 @@ let
               hardware.definition.netvm.extraModules = netvmExtraModules;
 
               virtualization = {
+                pkvm.enable = withPkvm;
                 microvm-host = {
                   enable = true;
                   networkSupport = true;
@@ -130,8 +133,8 @@ let
               # Enable all the default UI applications
               profiles = {
                 graphics.enable = true;
-                release.enable = variant == "release";
-                debug.enable = variant == "debug";
+                release.enable = lib.hasPrefix "release" variant;
+                debug.enable = lib.hasPrefix "debug" variant;
               };
               reference.programs.windows-launcher.enable = true;
               reference.host-demo-apps.demo-apps.enableDemoApplications = true;
@@ -181,7 +184,9 @@ let
   debugModules = [ { ghaf.development.usb-serial.enable = true; } ];
   targets = [
     (generic-x86 "debug" debugModules)
+    (generic-x86 "debug-pkvm" debugModules)
     (generic-x86 "release" [ ])
+    (generic-x86 "release-pkvm" [ ])
   ];
 in
 {
