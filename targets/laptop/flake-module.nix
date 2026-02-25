@@ -37,6 +37,7 @@ let
     self.nixosModules.verity-release-partition
     self.nixosModules.reference-profiles
     self.nixosModules.profiles
+    self.nixosModules.hardware-x86_64-hypervisor
   ];
 
   # Everything the installer environment needs beyond the boot medium: the dev
@@ -100,14 +101,32 @@ let
       vmConfig = merge "vmConfig";
     };
 
-  target-configs = lib.concatLists (
+  target-configs-by-machine = lib.mapAttrs (
+    name: machine:
+    lib.concatMap (
+      variant: map (mkTarget name machine variant) (subsets (machine.axes or [ ]))
+    ) machine.variants
+  ) machines;
+
+  target-configs = lib.concatLists (lib.attrValues target-configs-by-machine);
+
+  pkvm = import ./pkvm.nix { inherit lib; };
+  pkvm-machines = lib.filterAttrs (_: machine: machine.pkvm or false) machines;
+
+  pkvm-target-configs = lib.concatLists (
+    lib.mapAttrsToList (name: _: map pkvm.mkPkvmTarget target-configs-by-machine.${name}) pkvm-machines
+  );
+
+  pkvm-sm-off-target-configs = lib.concatLists (
     lib.mapAttrsToList (
       name: machine:
-      lib.concatMap (
-        variant: map (mkTarget name machine variant) (subsets (machine.axes or [ ]))
-      ) machine.variants
-    ) machines
+      lib.optionals (machine.hardware == "intel-laptop") (
+        map pkvm.mkPkvmSmOffTarget target-configs-by-machine.${name}
+      )
+    ) pkvm-machines
   );
+
+  all-target-configs = target-configs ++ pkvm-target-configs ++ pkvm-sm-off-target-configs;
 
   # Map all of the defined configurations to an installer image. Each installer
   # reuses the shared base NixOS evaluation and only overrides ISO contents.
@@ -117,12 +136,14 @@ let
       inherit (t) name;
       imagePath = self.packages.x86_64-linux.${t.name};
     }
-  ) target-configs;
+  ) all-target-configs;
 
   # Netboot counterparts. Unlike the ISOs these do NOT depend on the disk image
   # -- it is fetched at install time -- so they are tiny and share one kernel
   # and initrd across every target.
-  target-netboot-installers = map (t: ghaf-netboot-installer { inherit (t) name; }) target-configs;
+  target-netboot-installers = map (
+    t: ghaf-netboot-installer { inherit (t) name; }
+  ) all-target-configs;
 
   target-sysupdates = map (
     t:
@@ -134,11 +155,11 @@ let
     // {
       name = "${t.name}-sysupdate";
     }
-  ) (builtins.filter (x: x.buildSysupdateImage) target-configs);
+  ) (builtins.filter (x: x.buildSysupdateImage) all-target-configs);
 
-  config-targets = target-configs ++ target-sysupdates;
+  config-targets = all-target-configs ++ target-sysupdates;
   package-targets =
-    target-configs ++ target-installers ++ target-netboot-installers ++ target-sysupdates;
+    all-target-configs ++ target-installers ++ target-netboot-installers ++ target-sysupdates;
 in
 {
   flake = {

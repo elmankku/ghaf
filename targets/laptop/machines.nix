@@ -24,6 +24,7 @@
 #   axes       names from ./axes.nix, expanded into one (default [ ])
 #              target per subset; axes sharing a group
 #              are mutually exclusive
+#   pkvm       emit pKVM targets for this machine       (default false)
 #   sysupdate  also emit an A/B update image for the    (default false)
 #              axis-free target
 {
@@ -32,6 +33,7 @@
   # owned by the host, and the NIC needs an out-of-tree driver in net-vm.
   alienware-m18-R2 = {
     hardware = "alienware-m18-r2";
+    pkvm = true;
     variants = [
       "debug"
       "release"
@@ -50,6 +52,7 @@
   # The generic image. Covers every Intel laptop in the fleet.
   intel-laptop = {
     hardware = "intel-laptop";
+    pkvm = true;
     variants = [
       "debug"
       "release"
@@ -65,6 +68,7 @@
   # Same image, different application set.
   intel-laptop-extras = {
     hardware = "intel-laptop";
+    pkvm = true;
     product = "mvp-user-trial-extras";
     variants = [
       "debug"
@@ -85,6 +89,7 @@
   # Intel desktop, discrete RTX 5080 with the open NVIDIA drivers.
   tower-5080 = {
     hardware = "tower-5080";
+    pkvm = true;
     variants = [
       "debug"
       "release"
