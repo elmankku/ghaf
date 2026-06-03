@@ -194,7 +194,8 @@
 
     # Hot-plugging USB devices into virtual machines
     vhotplug = {
-      url = "github:tiiuae/vhotplug";
+      # HACK:
+      url = "github:elmankku/vhotplug";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-parts.follows = "flake-parts";

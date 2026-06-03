@@ -8,6 +8,22 @@
 }:
 let
   cfg = config.ghaf.hardware.passthrough.vhotplug;
+  crosvmPackage =
+    let
+      crosvmPackages = builtins.filter (pkg: pkg != null) (
+        lib.attrsets.mapAttrsToList (
+          _vmName: vmParams:
+          let
+            vmConfig = lib.ghaf.vm.getConfig vmParams;
+          in
+          if vmConfig != null && vmConfig.microvm.hypervisor == "crosvm" then
+            vmConfig.microvm.crosvm.package
+          else
+            null
+        ) config.microvm.vms
+      );
+    in
+    if crosvmPackages != [ ] then builtins.head crosvmPackages else pkgs.crosvm;
   inherit (lib)
     mkEnableOption
     mkOption
@@ -174,6 +190,7 @@ in
           inherit (cfg.api) allowedCids;
           unixSocketUser = "microvm";
         };
+        crosvm = getExe crosvmPackage;
         modprobe = lib.getExe' pkgs.kmod "modprobe";
         modinfo = lib.getExe' pkgs.kmod "modinfo";
         ovmfCode = "${pkgs.OVMF.fd}/FV/OVMF_CODE.fd";

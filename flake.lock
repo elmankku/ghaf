@@ -743,15 +743,15 @@
         ]
       },
       "locked": {
-        "lastModified": 1777319010,
-        "narHash": "sha256-8NVTCQmY93KfnJDL+r7WpfXr3zqyl98YpJiVuQyqx78=",
-        "owner": "tiiuae",
+        "lastModified": 1782994828,
+        "narHash": "sha256-TAWnpvyESeFTTV6fTOV/y2SLWveLQo3GaywEjZaW4ZE=",
+        "owner": "elmankku",
         "repo": "vhotplug",
-        "rev": "c3474a98f251f6e7cdff4ba5030a755d4dd8c35c",
+        "rev": "8139f131347d785be8a1c4e873ee47c471137aaa",
         "type": "github"
       },
       "original": {
-        "owner": "tiiuae",
+        "owner": "elmankku",
         "repo": "vhotplug",
         "type": "github"
       }
