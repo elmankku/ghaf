@@ -16,12 +16,16 @@ let
     else
       /. + localSrc;
 in
-crosvm.overrideAttrs (_finalAttrs: oldAttrs: {
-  pname = "crosvm-debug";
-  version = "${oldAttrs.version}-local";
-  src = builtins.path {
-    path = srcPath;
-    name = "crosvm-local-source";
-  };
-  patches = [ ];
-})
+crosvm.overrideAttrs (
+  _finalAttrs: oldAttrs: {
+    pname = "crosvm-debug";
+    version = "${oldAttrs.version}-local";
+    src = builtins.path {
+      path = srcPath;
+      name = "crosvm-local-source";
+    };
+    patches = [ ];
+
+    cargoBuildFeatures = (oldAttrs.cargoBuildFeatures or [ ]) ++ [ "pci-hotplug" ];
+  }
+)
