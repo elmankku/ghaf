@@ -33,8 +33,7 @@ let
           "--protected-vm-without-firmware"
           "--disable-sandbox"
         ];
-        # FIXME:
-        package = lib.mkForce pkgs.crosvm-pkvm;
+        package = lib.mkForce cfg.crosvm.package;
       };
 
       qemu = {
@@ -114,6 +113,12 @@ in
         "ignore_loglevel"
         # "console=ttyS0"
       ];
+    };
+
+    crosvm.package = lib.mkOption {
+      description = "The crosvm package used for pKVM guests.";
+      type = lib.types.package;
+      default = pkgs.crosvm-pkvm;
     };
 
     guests = lib.mkOption {
