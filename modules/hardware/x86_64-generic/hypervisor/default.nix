@@ -53,8 +53,6 @@ let
 
         package = pkgs.qemu-pkvm;
       };
-
-      virtiofsd.package = pkgs.virtiofsd-pkvm;
     };
   };
 
