@@ -51,7 +51,12 @@ let
   ) config.ghaf.hardware.definition.network.pciDevices;
   gpuPciDevices = config.ghaf.hardware.definition.gpu.pciDevices;
   sndPciDevices = config.ghaf.hardware.definition.audio.pciDevices;
-  evdevDevices = config.ghaf.hardware.definition.input.misc.evdev;
+  evdevDevices = lib.concatLists [
+    config.ghaf.hardware.definition.input.keyboard.evdev
+    config.ghaf.hardware.definition.input.mouse.evdev
+    config.ghaf.hardware.definition.input.touchpad.evdev
+    config.ghaf.hardware.definition.input.misc.evdev
+  ];
   busPrefix = config.ghaf.hardware.passthrough.pciPorts.pcieBusPrefix;
 in
 {
@@ -149,6 +154,13 @@ in
         lib.imap1 (i: d: [
           "-device"
           "virtio-input-host-pci,evdev=${d},id=evdev-${toString i}"
+        ]) evdevDevices
+      );
+
+      evdev.microvm.crosvm.extraArgs = lib.concatLists (
+        lib.imap1 (_i: d: [
+          "--input"
+          "evdev[path=${d}]"
         ]) evdevDevices
       );
     };

@@ -23,6 +23,21 @@
   };
 
   input = {
+    # keyboard = {
+    #   name = [ "AT Translated Set 2 keyboard" ];
+    #   evdev = [ "/dev/input/by-path/platform-i8042-serio-0-event-kbd" ];
+    # };
+
+    # mouse = {
+    #   name = [ "TPPS/2 Elan TrackPoint" ];
+    #   evdev = [ "/dev/input/by-path/platform-i8042-serio-1-event-mouse" ];
+    # };
+
+    # touchpad = {
+    #   name = [ "SNSL0028:00 2C2F:0028 Touchpad" ];
+    #   evdev = [ "/dev/input/by-path/pci-0000:00:15.0-platform-i2c_designware.0-event-mouse" ];
+    # };
+
     misc = {
       name = [ "ThinkPad Extra Buttons" ];
       evdev = [ "/dev/input/by-path/platform-thinkpad_acpi-event" ];
