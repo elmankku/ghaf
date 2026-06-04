@@ -26,9 +26,13 @@ let
     microvm = {
       hypervisor = vmCfg.vmm;
 
-      crosvm.extraArgs = [
-        "--protected-vm-without-firmware"
-      ];
+      crosvm = {
+        extraArgs = [
+          "--protected-vm-without-firmware"
+          "--disable-sandbox"
+        ];
+        package = pkgs.crosvm-pkvm;
+      };
 
       qemu = {
         machine = "q35";
