@@ -28,7 +28,7 @@ let
       INTEL_IOMMU = yes;
     };
   };
-  kernelVersion = "6.12.58";
+  kernelVersion = "6.12.87";
   version = "${kernelVersion}-pkvm-${variant}";
 
   pkvmKernel = buildLinux (
@@ -37,10 +37,10 @@ let
       modDirVersion = kernelVersion;
 
       src = pkgs.fetchFromGitHub {
-        owner = "tiiuae";
-        repo = "pKVM-x86";
-        rev = "50b5d7c5decca0ff4d935fe6f59c326d351ebfda";
-        sha256 = "sha256-bFtWVV1Qor/HDTet52c2zp7OeWV7RuewufL52GEaBmI=";
+        owner = "elmankku";
+        repo = "pKVM-x86-IA";
+        rev = "63c0ab2b9eaab1eb5c32a4451334dcda43845f52";
+        sha256 = "sha256-MK+f750cxN4vcDM0vbvzL6zluI25JLgW9dGuEUHzv+E=";
       };
       structuredExtraConfig = variants.${variant};
 
