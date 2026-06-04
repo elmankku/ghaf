@@ -31,8 +31,6 @@ qemu_kvm.overrideAttrs (
         ./patches/0002-hw-acpi-Introduce-the-QEMU-Battery.patch
         ./patches/0003-hw-acpi-Introduce-the-QEMU-AC-adapter.patch
         ./patches/0004-hw-acpi-Introduce-the-QEMU-lid-button.patch
-        # pKVM-x86 support: https://github.com/jkrh/pkvm-x86
-        ./0001-qemu-Add-support-for-pKVM.patch
       ];
 
     postInstall = (prev.postInstall or "") + ''

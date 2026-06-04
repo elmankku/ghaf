@@ -628,7 +628,14 @@ let
     // rec {
       name = "${t.name}-pkvm";
       hostConfiguration = t.hostConfiguration.extendModules {
-        modules = [ { ghaf.virtualization.pkvm.enable = true; } ];
+        modules = [
+          {
+            ghaf.virtualization.pkvm.enable = true;
+
+            # HACK for now
+            ghaf.storage.encryption.enable = lib.mkForce false;
+          }
+        ];
       };
       package = hostConfiguration.config.system.build.ghafImage;
     };

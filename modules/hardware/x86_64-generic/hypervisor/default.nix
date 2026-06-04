@@ -21,10 +21,12 @@ let
     };
 
   pkvmGuestModule = vmCfg: {
+    ghaf.virtualization.qemu.package = pkgs.qemu-pkvm;
+
     boot.kernelPackages = pkgs.linuxPackagesFor vmCfg.kernelPackage;
 
     microvm = {
-      hypervisor = vmCfg.vmm;
+      hypervisor = lib.mkForce vmCfg.vmm;
 
       crosvm = {
         extraArgs = [
@@ -51,7 +53,7 @@ let
           "mem-lock=on"
         ];
 
-        package = pkgs.qemu-pkvm;
+        # package = pkgs.qemu-pkvm;
       };
     };
   };
@@ -105,11 +107,11 @@ in
       type = lib.types.listOf lib.types.str;
       default = [
         "kvm-intel.pkvm=1"
-        "intel_iommu=sm_on"
+        # "intel_iommu=sm_on"
         # FIXME: DEBUGGING
-        "earlyprintk=ttyS0"
+        # "earlyprintk=ttyS0"
         "ignore_loglevel"
-        "console=ttyS0"
+        # "console=ttyS0"
       ];
     };
 
@@ -129,7 +131,8 @@ in
                 "qemu"
                 "crosvm"
               ];
-              default = "qemu";
+              # FIXME
+              default = "crosvm";
             };
 
             kernelPackage = lib.mkOption {
