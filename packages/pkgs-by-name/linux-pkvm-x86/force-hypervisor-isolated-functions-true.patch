@@ -1,0 +1,13 @@
+diff --git a/include/linux/hypervisor.h b/include/linux/hypervisor.h
+index be5417303ecf..df233f27b878 100644
+--- a/include/linux/hypervisor.h
++++ b/include/linux/hypervisor.h
+@@ -34,6 +34,8 @@ static inline bool jailhouse_paravirt(void)
+ 
+ static inline bool hypervisor_isolated_pci_functions(void)
+ {
++	return true;
++
+ 	if (IS_ENABLED(CONFIG_S390))
+ 		return true;
+ 

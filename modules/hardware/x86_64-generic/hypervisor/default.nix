@@ -33,7 +33,8 @@ let
           "--protected-vm-without-firmware"
           "--disable-sandbox"
         ];
-        package = pkgs.crosvm-pkvm;
+        # FIXME:
+        package = lib.mkForce pkgs.crosvm-pkvm;
       };
 
       qemu = {

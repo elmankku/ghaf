@@ -47,6 +47,12 @@ let
       extraMeta = {
         platforms = with lib.platforms; lib.intersectLists x86 linux;
       };
+      kernelPatches = [
+        {
+          name = "pci: force hypervisor isolated functions";
+          patch = ./force-hypervisor-isolated-functions-true.patch;
+        }
+      ];
     }
     // args.argsOverride or { }
   );
