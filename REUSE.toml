@@ -183,3 +183,8 @@ SPDX-FileCopyrightText = [
   "2022-2026 TII (SSRC) and the Ghaf contributors"
 ]
 path = "overlays/jetpack-nvdisplay/*.patch"
+
+[[annotations]]
+SPDX-License-Identifier = "BSD-3-Clause"
+SPDX-FileCopyrightText = "2022-2026 TII (SSRC) and the Ghaf contributors"
+path = "packages/pkgs-by-name/pkvm-crosvm/*.patch"
