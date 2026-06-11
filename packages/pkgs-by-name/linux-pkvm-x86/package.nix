@@ -49,8 +49,17 @@ let
       };
       kernelPatches = [
         {
-          name = "pci: force hypervisor isolated functions";
-          patch = ./force-hypervisor-isolated-functions-true.patch;
+          name = "pci: probe hypervisor isolated functions";
+          patch = ./0001-pci-Add-option-for-scanning-all-possible-PCI-functio.patch;
+          structuredExtraConfig =
+            with pkgs.lib.kernel;
+            lib.optionalAttrs isGuest {
+              PCI_PROBE_ISOLATED_FUNCTIONS = yes;
+            };
+        }
+        {
+          name = "pkvm: Intel GPU OpRegion quirks";
+          patch = ./0002-pkvm-x86-Fix-unhandled-VE-exceptions.patch;
         }
       ];
     }

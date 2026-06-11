@@ -1,0 +1,50 @@
+From c61d235d353d2fe5b27e2ee98d9cf67126bcc273 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Markku=20Ahvenj=C3=A4rvi?= <mankku@gmail.com>
+Date: Thu, 11 Jun 2026 13:10:17 +0300
+Subject: [PATCH 1/2] pci: Add option for scanning all possible PCI functions
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Markku Ahvenjärvi <mankku@gmail.com>
+---
+ drivers/pci/Kconfig        | 8 ++++++++
+ include/linux/hypervisor.h | 3 +++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/drivers/pci/Kconfig b/drivers/pci/Kconfig
+index 0d94e4a967d8..3d5882aabdb0 100644
+--- a/drivers/pci/Kconfig
++++ b/drivers/pci/Kconfig
+@@ -77,6 +77,14 @@ config PCI_DEBUG
+ 
+ 	  When in doubt, say N.
+ 
++config PCI_PROBE_ISOLATED_FUNCTIONS
++	bool "Probe isolated PCI functions without function 0"
++	help
++	  Allow PCI enumeration to continue probing a slot even if function 0
++	  is absent. This is useful in some virtualized environments where the
++	  hypervisor exposes only a passed-through PCI function without creating
++	  dummy functions for the rest of the slot.
++
+ config PCI_REALLOC_ENABLE_AUTO
+ 	bool "Enable PCI resource re-allocation detection"
+ 	depends on PCI_IOV
+diff --git a/include/linux/hypervisor.h b/include/linux/hypervisor.h
+index be5417303ecf..1370859b2bde 100644
+--- a/include/linux/hypervisor.h
++++ b/include/linux/hypervisor.h
+@@ -40,6 +40,9 @@ static inline bool hypervisor_isolated_pci_functions(void)
+ 	if (IS_ENABLED(CONFIG_LOONGARCH))
+ 		return true;
+ 
++	if (IS_ENABLED(CONFIG_PCI_PROBE_ISOLATED_FUNCTIONS))
++		return true;
++
+ 	return jailhouse_paravirt();
+ }
+ 
+-- 
+2.49.0
+
