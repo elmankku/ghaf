@@ -32,6 +32,8 @@ let
         extraArgs = [
           "--protected-vm-without-firmware"
           "--disable-sandbox"
+          # FIXME: where this should go...?
+          # "--pci-hotplug-slots=32"
         ];
         package = lib.mkForce cfg.crosvm.package;
       };

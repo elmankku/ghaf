@@ -139,7 +139,8 @@
 
     # For building and managing VMs
     microvm = {
-      url = "github:microvm-nix/microvm.nix";
+      # url = "github:microvm-nix/microvm.nix";
+      url = "git+file:///home/markku/code/upstream/microvm.nix";
       inputs = {
         nixpkgs.follows = "nixpkgs";
       };

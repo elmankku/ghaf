@@ -139,6 +139,14 @@ in
       '';
     };
 
+    quiet = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Whether to add the `quiet` kernel parameter for graphical boot.
+      '';
+    };
+
     debug = mkEnableOption "plymouth debug logs";
   };
 
@@ -154,10 +162,9 @@ in
         themePackages = optionals cfg.firmwareLogo.enable [ plymouth-ghaf-background ];
       };
       # Hide boot log from user completely
-      kernelParams = [
-        "quiet"
-        "udev.log_priority=3"
-      ]
+      kernelParams =
+        optionals cfg.quiet [ "quiet" ]
+        ++ [ "udev.log_priority=3" ]
       ++ optionals cfg.debug [ "plymouth.debug" ]
       # Disables loading the UEFI logo from firmware to /sys/firmware/acpi/bgrt
       ++ optionals cfg.firmwareLogo.enable [ "bgrt_disable=1" ]

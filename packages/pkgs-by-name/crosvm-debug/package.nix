@@ -26,6 +26,7 @@ crosvm.overrideAttrs (
     };
     patches = [ ];
 
+    buildFeatures = (oldAttrs.buildFeatures or [ ]) ++ [ "pci-hotplug" ];
     cargoBuildFeatures = (oldAttrs.cargoBuildFeatures or [ ]) ++ [ "pci-hotplug" ];
   }
 )

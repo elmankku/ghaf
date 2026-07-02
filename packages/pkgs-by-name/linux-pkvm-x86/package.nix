@@ -61,6 +61,20 @@ let
           name = "pkvm: Intel GPU OpRegion quirks";
           patch = ./0002-pkvm-x86-Fix-unhandled-VE-exceptions.patch;
         }
+        {
+          name = "DEBUG: Intel GPU debug";
+          patch = ./0001-DEBUG-trace-IOMMU-for-GPU.patch;
+          structuredExtraConfig =
+            with pkgs.lib.kernel;
+            lib.optionalAttrs (isGuest == false) {
+              IOMMU_DEBUGFS = yes;
+              INTEL_IOMMU_DEBUGFS = yes;
+            };
+        }
+        {
+          name = "REMOVE ME: ptdev concurrency fixes";
+          patch = ./0001-pkvm-x86-address-ptdev-concurrency-issues.patch;
+        }
       ];
     }
     // args.argsOverride or { }

@@ -438,17 +438,17 @@
         "spectrum": "spectrum"
       },
       "locked": {
-        "lastModified": 1779043402,
-        "narHash": "sha256-1dH6yiwEck1n3oz5TDUV5TGbwNqu46eNTVHbhFO2U5k=",
-        "owner": "microvm-nix",
-        "repo": "microvm.nix",
-        "rev": "77024c22f4ddf509137fc732094888d1ffe631e2",
-        "type": "github"
+        "lastModified": 1781684381,
+        "narHash": "sha256-gg3IOUoNXz0V2Us3H0QHZIlQ2k62wZ8TRqEs0yTpbLc=",
+        "ref": "refs/heads/main",
+        "rev": "741a4f742f4c743dcf39d635228dfea675ff437f",
+        "revCount": 1131,
+        "type": "git",
+        "url": "file:///home/markku/code/upstream/microvm.nix"
       },
       "original": {
-        "owner": "microvm-nix",
-        "repo": "microvm.nix",
-        "type": "github"
+        "type": "git",
+        "url": "file:///home/markku/code/upstream/microvm.nix"
       }
     },
     "nix-store-veritysetup-generator": {

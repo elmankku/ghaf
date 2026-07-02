@@ -14,7 +14,10 @@
 
   host = {
     kernelConfig.kernelParams = [
-      "intel_iommu=on,sm_off"
+      "intel_iommu=on,sm_off,sp_off,debug_flush_all,debug_dump_source=00:02.0"
+      "pci=noats"
+      # "iommu.strict=1"
+      # "intel_iommu=on,sm_on"
       "iommu=pt"
       "module_blacklist=i915,xe,snd_pcm,mei_me,bluetooth,btusb" # Prevent kernel modules from being accidentally used by host
       "acpi_backlight=vendor"
