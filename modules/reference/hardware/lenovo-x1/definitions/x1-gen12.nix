@@ -16,7 +16,8 @@
     kernelConfig.kernelParams = [
       # FIXME: pKVM requires sm_off due to no NEST support
       # FIXME: sp_off is a workaround for crosvm+viommu
-      "intel_iommu=on,sm_off,sp_off"
+      # FIXME: debug_flush_all forces domain wide flushes for crosvm+stock kernel
+      "intel_iommu=on,sm_off,sp_off,debug_flush_all"
       # FIXME: workaround for PLANE ATS fault with crosvm+viommu
       "pci=noats"
       "iommu=pt"
