@@ -125,32 +125,7 @@
     hardware-lenovo-x1-carbon-gen12.imports = [
       inputs.self.nixosModules.hardware-x86_64-workstation
       {
-        ghaf = {
-          kernel.gpuHackFlushAll.enable = true;
-          hardware.definition =
-            (import ./lenovo-x1/definitions/x1-gen12.nix)
-            // {
-              guivm.extraModules = [
-                ({ lib, ... }: {
-                  ghaf.graphics.boot.quiet = false;
-
-                  microvm.qemu.extraArgs = lib.mkBefore [
-                    "-cpu"
-                    "host,host-phys-bits-limit=42"
-                    "-device"
-                    "virtio-iommu-pci,bus=pcie.0"
-                  ];
-
-                  boot.kernelPatches = [
-                    {
-                      name = "gpu-hack-flush-all";
-                      patch = ../../../gpu-hack-flush-all.patch;
-                    }
-                  ];
-                })
-              ];
-            };
-        };
+        ghaf.hardware.definition = import ./lenovo-x1/definitions/x1-gen12.nix;
       }
     ];
 

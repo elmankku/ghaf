@@ -45,20 +45,7 @@ in
     enable = lib.mkEnableOption "Memory wipe on boot and free using kernel configuration (host only)";
   };
 
-  options.ghaf.kernel.gpuHackFlushAll = {
-    enable = lib.mkEnableOption "Apply gpu-hack-flush-all.patch to the stock kernel";
-  };
-
   config = lib.mkMerge [
-    {
-      boot.kernelPatches = lib.optionals config.ghaf.kernel.gpuHackFlushAll.enable [
-        {
-          name = "gpu-hack-flush-all";
-          patch = ../../../gpu-hack-flush-all.patch;
-        }
-      ];
-    }
-
     # Memory wipe kernel patches (applies to host only)
     {
       boot.kernelPatches = lib.optionals config.ghaf.host.kernel.memory-wipe.enable [
