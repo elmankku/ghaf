@@ -1,0 +1,36 @@
+From aaeeb64f8e91653adc0c72fcc2ac5fe113fc53d2 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Markku=20Ahvenj=C3=A4rvi?= <mankku@gmail.com>
+Date: Fri, 3 Jul 2026 17:04:13 +0300
+Subject: [PATCH] REMOVE ME: Fix missing imports
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Markku Ahvenjärvi <mankku@gmail.com>
+---
+ devices/src/pci/vfio_pci.rs | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/devices/src/pci/vfio_pci.rs b/devices/src/pci/vfio_pci.rs
+index 6930a7bad59c..276070405010 100644
+--- a/devices/src/pci/vfio_pci.rs
++++ b/devices/src/pci/vfio_pci.rs
+@@ -15,6 +15,7 @@ use std::sync::Arc;
+ use acpi_tables::aml::Aml;
+ use base::debug;
+ use base::error;
++use base::info;
+ use base::pagesize;
+ use base::warn;
+ use base::AsRawDescriptor;
+@@ -62,6 +63,7 @@ use crate::pci::msix::MsixStatus;
+ use crate::pci::msix::BITS_PER_PBA_ENTRY;
+ use crate::pci::msix::MSIX_PBA_ENTRIES_MODULO;
+ use crate::pci::msix::MSIX_TABLE_ENTRIES_MODULO;
++use crate::pci::pci_configuration::NUM_BAR_REGS;
+ use crate::pci::pci_device::BarRange;
+ use crate::pci::pci_device::Error as PciDeviceError;
+ use crate::pci::pci_device::PciDevice;
+-- 
+2.54.0
+

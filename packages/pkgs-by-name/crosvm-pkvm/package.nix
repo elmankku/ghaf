@@ -19,6 +19,7 @@ crosvm.overrideAttrs (
       ./0008-HACK-disable-Intel-GPU-AML-generation.patch
       ./0009-temporarily-disable-logging.patch
       ./0010-WIP-Do-not-advertise-hotplug-devices-in-ACPI-VIOT.patch
+      ./0001-REMOVE-ME-Fix-missing-imports.patch
     ];
   }
 )
