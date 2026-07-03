@@ -14,7 +14,11 @@
 
   host = {
     kernelConfig.kernelParams = [
-      "intel_iommu=on,sm_off"
+      # FIXME: pKVM requires sm_off due to no NEST support
+      # FIXME: sp_off is a workaround for crosvm+viommu
+      "intel_iommu=on,sm_off,sp_off"
+      # FIXME: workaround for PLANE ATS fault with crosvm+viommu
+      "pci=noats"
       "iommu=pt"
       "module_blacklist=i915,xe,snd_pcm,mei_me,bluetooth,btusb" # Prevent kernel modules from being accidentally used by host
       "acpi_backlight=vendor"
