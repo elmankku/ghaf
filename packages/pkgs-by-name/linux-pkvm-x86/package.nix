@@ -13,6 +13,7 @@ let
     guest = {
       HYPERVISOR_GUEST = yes;
       PKVM_GUEST = yes;
+      PCI_PROBE_ISOLATED_FUNCTIONS = yes;
     };
     host = {
       KVM = yes;
@@ -39,43 +40,14 @@ let
       src = pkgs.fetchFromGitHub {
         owner = "elmankku";
         repo = "pKVM-x86-IA";
-        rev = "63c0ab2b9eaab1eb5c32a4451334dcda43845f52";
-        sha256 = "sha256-MK+f750cxN4vcDM0vbvzL6zluI25JLgW9dGuEUHzv+E=";
+        rev = "9a1b0c7cb714c35b18fe32c1f99069721053ce59";
+        sha256 = "sha256-922dioM3a85zOJsiAde3T+mzXpnx4sK7eb+YAFMjkEw=";
       };
       structuredExtraConfig = variants.${variant};
 
       extraMeta = {
         platforms = with lib.platforms; lib.intersectLists x86 linux;
       };
-      kernelPatches = [
-        {
-          name = "pci: probe hypervisor isolated functions";
-          patch = ./0001-pci-Add-option-for-scanning-all-possible-PCI-functio.patch;
-          structuredExtraConfig =
-            with pkgs.lib.kernel;
-            lib.optionalAttrs isGuest {
-              PCI_PROBE_ISOLATED_FUNCTIONS = yes;
-            };
-        }
-        {
-          name = "pkvm: Intel GPU OpRegion quirks";
-          patch = ./0002-pkvm-x86-Fix-unhandled-VE-exceptions.patch;
-        }
-        {
-          name = "DEBUG: Intel GPU debug";
-          patch = ./0001-DEBUG-trace-IOMMU-for-GPU.patch;
-          structuredExtraConfig =
-            with pkgs.lib.kernel;
-            lib.optionalAttrs (isGuest == false) {
-              IOMMU_DEBUGFS = yes;
-              INTEL_IOMMU_DEBUGFS = yes;
-            };
-        }
-        {
-          name = "REMOVE ME: ptdev concurrency fixes";
-          patch = ./0001-pkvm-x86-address-ptdev-concurrency-issues.patch;
-        }
-      ];
     }
     // args.argsOverride or { }
   );
