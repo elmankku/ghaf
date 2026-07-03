@@ -265,35 +265,6 @@ let
     })
 
     (ghaf-configuration {
-      name = "lenovo-x1-carbon-gen12-crosvm";
-      inherit system;
-      profile = "laptop-x86";
-      hardwareModule = self.nixosModules.hardware-lenovo-x1-carbon-gen12;
-      variant = "debug";
-      extraModules = commonModules;
-      extraConfig = {
-        reference.profiles.mvp-user-trial.enable = true;
-        partitioning.disko.enable = true;
-      };
-      vmConfig = {
-        sysvms = {
-          netvm.extraModules = [
-            crosvmModule
-          ];
-          guivm.extraModules = [
-            crosvmModule
-          ];
-          audiovm.extraModules = [
-            crosvmModule
-          ];
-          adminvm.extraModules = [
-            crosvmModule
-          ];
-        };
-      };
-    })
-
-    (ghaf-configuration {
       name = "lenovo-x1-carbon-gen13";
       inherit system;
       profile = "laptop-x86";
@@ -659,11 +630,31 @@ let
     # keep-sorted end
   ];
 
+  generate-crosvm-target =
+    t:
+    t
+    // rec {
+      name = "${lib.removeSuffix "-${t.variant}" t.name}-crosvm-${t.variant}";
+      hostConfiguration = t.hostConfiguration.extendModules {
+        modules = [
+          {
+            ghaf.virtualization.vmConfig.sysvms = {
+              netvm.extraModules = [ crosvmModule ];
+              guivm.extraModules = [ crosvmModule ];
+              audiovm.extraModules = [ crosvmModule ];
+              adminvm.extraModules = [ crosvmModule ];
+            };
+          }
+        ];
+      };
+      package = hostConfiguration.config.system.build.ghafImage;
+    };
+
   generate-pkvm-target =
     t:
     t
     // rec {
-      name = "${t.name}-pkvm";
+      name = "${lib.removeSuffix "-${t.variant}" t.name}-pkvm-${t.variant}";
       hostConfiguration = t.hostConfiguration.extendModules {
         modules = [
           {
@@ -677,34 +668,9 @@ let
       package = hostConfiguration.config.system.build.ghafImage;
     };
 
-  x1Gen12CrosvmPkvmTarget =
-    let
-      baseTarget = generate-pkvm-target (
-        builtins.head (builtins.filter (t: t.name == "lenovo-x1-carbon-gen12-crosvm-debug") target-configs)
-      );
-    in
-    baseTarget
-    // rec {
-      hostConfiguration = baseTarget.hostConfiguration.extendModules {
-        modules = [
-          (
-            { pkgs, ... }:
-            {
-              ghaf.virtualization.pkvm = {
-                crosvm.package = pkgs.crosvm-debug;
-                guests.adminvm.vmm = lib.mkForce "crosvm";
-              };
-            }
-          )
-        ];
-      };
-      package = hostConfiguration.config.system.build.ghafImage;
-    };
-
-  pkvm-target-configs = map generate-pkvm-target (
-    builtins.filter (t: t.name != "lenovo-x1-carbon-gen12-crosvm-debug") target-configs
-  );
-  all-target-configs = target-configs ++ pkvm-target-configs ++ [ x1Gen12CrosvmPkvmTarget ];
+  crosvm-target-configs = map generate-crosvm-target target-configs;
+  pkvm-target-configs = map generate-pkvm-target target-configs;
+  all-target-configs = target-configs ++ crosvm-target-configs ++ pkvm-target-configs;
 
   # Map all of the defined configurations to an installer image. Each installer
   # reuses the shared base NixOS evaluation and only overrides ISO contents.
