@@ -6,7 +6,7 @@
 # This module handles hardware-specific configurations for the Audio VM:
 # - Audio device passthrough (from hostConfig.hardware.devices.audio)
 # - Kernel configuration (from hostConfig.kernel)
-# - QEMU configuration (from hostConfig.qemu)
+# - VMM configuration (from hostConfig.qemu / hostConfig.crosvm)
 #
 # These settings are host-bound and cannot be globalized, so they must
 # come from hostConfig which is passed via specialArgs.
@@ -25,9 +25,10 @@ let
   # Check if we have actual audio devices to passthrough (non-empty config)
   hasAudioDevices = audioDevicesConfig != { };
 
-  # Get kernel/qemu configs (can be null)
+  # Get kernel/VMM configs (can be null)
   kernelConfig = hostConfig.kernel or null;
   qemuConfig = hostConfig.qemu or null;
+  crosvmConfig = hostConfig.crosvm or null;
 in
 {
   _file = ./hardware-passthrough.nix;
@@ -39,5 +40,7 @@ in
     ++ lib.optional (kernelConfig != null) kernelConfig
     # QEMU configuration from host (if defined)
     ++ lib.optional (qemuConfig != null) qemuConfig
+    # Crosvm configuration from host (if defined)
+    ++ lib.optional (crosvmConfig != null) crosvmConfig
   );
 }

@@ -68,6 +68,7 @@ in
   _file = ./guivm-base.nix;
 
   imports = [
+    ./guivm-crosvm.nix
     inputs.self.nixosModules.profiles
     inputs.self.nixosModules.givc
     inputs.self.nixosModules.hardware-x86_64-guest-kernel

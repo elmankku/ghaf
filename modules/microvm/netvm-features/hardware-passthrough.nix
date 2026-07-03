@@ -23,9 +23,10 @@ let
   # Check if we have actual devices to passthrough (non-empty config)
   hasNetDevices = netDevicesConfig != { };
 
-  # Get kernel/qemu configs (can be null)
+  # Get kernel/VMM configs (can be null)
   kernelConfig = hostConfig.kernel or null;
   qemuConfig = hostConfig.qemu or null;
+  crosvmConfig = hostConfig.crosvm or null;
 in
 {
   _file = ./hardware-passthrough.nix;
@@ -37,5 +38,7 @@ in
     ++ lib.optional (kernelConfig != null) kernelConfig
     # QEMU configuration from host (if defined)
     ++ lib.optional (qemuConfig != null) qemuConfig
+    # Crosvm configuration from host (if defined)
+    ++ lib.optional (crosvmConfig != null) crosvmConfig
   );
 }
