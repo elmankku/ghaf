@@ -6,7 +6,6 @@
   flake.overlays.own-pkgs-overlay = final: _prev: {
     audit-rules = final.callPackage ./pkgs-by-name/audit-rules/package.nix { };
     chrome-extensions = final.callPackage ./chrome-extensions { };
-    crosvm-debug = final.callPackage ./pkgs-by-name/crosvm-debug/package.nix { };
     crosvm-pkvm = final.callPackage ./pkgs-by-name/crosvm-pkvm/package.nix { };
     dendrite-pinecone = final.callPackage ./pkgs-by-name/dendrite-pinecone/package.nix { };
     falcon-launcher = final.callPackage ./falcon-launcher/package.nix { };

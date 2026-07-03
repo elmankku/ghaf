@@ -15,7 +15,7 @@ let
     { pkgs, ... }:
     {
       microvm.hypervisor = lib.mkForce "crosvm";
-      microvm.crosvm.package = pkgs.crosvm-debug;
+      microvm.crosvm.package = pkgs.crosvm-pkvm;
       # boot.kernelPackages = pkgs.linuxPackagesFor pkgs.linux-pkvm-x86-guest;
       # microvm.crosvm.iommu = "off";
     };
