@@ -1,0 +1,35 @@
+From e78ac96208e2f6f39913b884d62051bf77f5eb10 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Markku=20Ahvenj=C3=A4rvi?= <mankku@gmail.com>
+Date: Mon, 1 Jun 2026 17:39:07 +0300
+Subject: [PATCH 02/10] evdev: allow empty unique identifier
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Support devices without unique identifier.
+
+Signed-off-by: Markku Ahvenjärvi <mankku@gmail.com>
+---
+ devices/src/virtio/input/evdev.rs | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/devices/src/virtio/input/evdev.rs b/devices/src/virtio/input/evdev.rs
+index ae0786ccdf00..2292962ac5b6 100644
+--- a/devices/src/virtio/input/evdev.rs
++++ b/devices/src/virtio/input/evdev.rs
+@@ -165,7 +165,11 @@ pub fn serial_name<T: AsRawDescriptor>(descriptor: &T) -> Result<String> {
+         unsafe { ioctl_with_mut_ref(descriptor, EVIOCGUNIQ, &mut uniq) }
+     };
+     if len < 0 {
+-        return Err(InputError::EvdevSerialError(errno()));
++        let err = errno();
++        if err.errno() == libc::ENOENT {
++            return Ok(String::new());
++        }
++        return Err(InputError::EvdevSerialError(err));
+     }
+     string_from_bytes_with_nul(&uniq.buffer, len as usize)
+ }
+-- 
+2.54.0
+

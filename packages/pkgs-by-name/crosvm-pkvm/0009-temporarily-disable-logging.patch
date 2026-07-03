@@ -1,0 +1,62 @@
+From 4e288e5e60300e388f0c0b1912fdf8bf6e3c4975 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Markku=20Ahvenj=C3=A4rvi?= <mankku@gmail.com>
+Date: Tue, 9 Jun 2026 13:46:41 +0300
+Subject: [PATCH 09/10] temporarily disable logging
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Markku Ahvenjärvi <mankku@gmail.com>
+---
+ devices/src/pci/vfio_pci.rs | 28 ++++++++++++++--------------
+ 1 file changed, 14 insertions(+), 14 deletions(-)
+
+diff --git a/devices/src/pci/vfio_pci.rs b/devices/src/pci/vfio_pci.rs
+index 353f231ed53c..6930a7bad59c 100644
+--- a/devices/src/pci/vfio_pci.rs
++++ b/devices/src/pci/vfio_pci.rs
+@@ -981,13 +981,13 @@ impl VfioPciDevice {
+         let shadow = opregion.shadow.lock();
+         if let Some(src) = shadow.get(start..end) {
+             data.copy_from_slice(src);
+-            info!(
+-                "{} opregion shadow read offset={:#x} len={} data={:02x?}",
+-                self.debug_label(),
+-                offset,
+-                data.len(),
+-                data
+-            );
++            // info!(
++            //     "{} opregion shadow read offset={:#x} len={} data={:02x?}",
++            //     self.debug_label(),
++            //     offset,
++            //     data.len(),
++            //     data
++            // );
+         } else {
+             warn!(
+                 "{} opregion shadow read out of range offset={:#x} len={} shadow_len={}",
+@@ -1022,13 +1022,13 @@ impl VfioPciDevice {
+         let mut shadow = opregion.shadow.lock();
+         if let Some(dst) = shadow.get_mut(start..end) {
+             dst.copy_from_slice(data);
+-            info!(
+-                "{} opregion shadow write offset={:#x} len={} data={:02x?}",
+-                self.debug_label(),
+-                offset,
+-                data.len(),
+-                data
+-            );
++            // info!(
++            //     "{} opregion shadow write offset={:#x} len={} data={:02x?}",
++            //     self.debug_label(),
++            //     offset,
++            //     data.len(),
++            //     data
++            // );
+         } else {
+             warn!(
+                 "{} opregion shadow write out of range offset={:#x} len={} shadow_len={}",
+-- 
+2.54.0
+

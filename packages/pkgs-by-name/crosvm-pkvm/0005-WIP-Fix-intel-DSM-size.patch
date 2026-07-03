@@ -1,0 +1,119 @@
+From 9933633f92aac7c355dcec30e633593226187bfc Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Markku=20Ahvenj=C3=A4rvi?= <mankku@gmail.com>
+Date: Fri, 5 Jun 2026 14:00:20 +0300
+Subject: [PATCH 05/10] WIP: Fix intel DSM size
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Markku Ahvenjärvi <mankku@gmail.com>
+---
+ devices/src/pci/vfio_pci.rs | 79 +++++++++++++++++++++++++++++++++++--
+ 1 file changed, 76 insertions(+), 3 deletions(-)
+
+diff --git a/devices/src/pci/vfio_pci.rs b/devices/src/pci/vfio_pci.rs
+index b29fafc2012a..8592e24f4bae 100644
+--- a/devices/src/pci/vfio_pci.rs
++++ b/devices/src/pci/vfio_pci.rs
+@@ -662,6 +662,66 @@ struct IntelGfxOpRegion {
+     size: u64,
+ }
+ 
++const DSM_ARG0_LEN: usize = 16;
++const DSM_ARG1_LEN: usize = 8;
++const DSM_ARG2_LEN: usize = 8;
++const DSM_FIXED_LEN: usize = DSM_ARG0_LEN + DSM_ARG1_LEN + DSM_ARG2_LEN;
++const DSM_TYPE_INT: u32 = 1;
++const DSM_TYPE_STRING: u32 = 2;
++const DSM_TYPE_BUFFER: u32 = 3;
++const DSM_TYPE_PACKAGE: u32 = 4;
++
++fn checked_add_usize(lhs: usize, rhs: usize) -> Option<usize> {
++    lhs.checked_add(rhs)
++}
++
++fn align_to_qword(size: usize) -> Option<usize> {
++    checked_add_usize(size, 7).map(|v| v & !7)
++}
++
++fn read_u32_le(buf: &[u8], offset: usize) -> Option<u32> {
++    let end = checked_add_usize(offset, 4)?;
++    let bytes: [u8; 4] = buf.get(offset..end)?.try_into().ok()?;
++    Some(u32::from_le_bytes(bytes))
++}
++
++fn encoded_dsm_package_len(buf: &[u8]) -> Option<usize> {
++    let item_count = usize::try_from(read_u32_le(buf, 4)?).ok()?;
++    let mut offset = 8;
++
++    for _ in 0..item_count {
++        let item_type = read_u32_le(buf, offset)?;
++        let item_size = usize::try_from(read_u32_le(buf, checked_add_usize(offset, 4)?)?).ok()?;
++        offset = checked_add_usize(offset, 8)?;
++
++        let payload_len = match item_type {
++            DSM_TYPE_INT => 8,
++            DSM_TYPE_STRING | DSM_TYPE_BUFFER => align_to_qword(item_size)?,
++            _ => return None,
++        };
++
++        offset = checked_add_usize(offset, payload_len)?;
++        if offset > buf.len() {
++            return None;
++        }
++    }
++
++    Some(offset)
++}
++
++fn encoded_dsm_len(buf: &[u8]) -> Option<usize> {
++    let arg3 = buf.get(DSM_FIXED_LEN..)?;
++    let arg3_type = read_u32_le(arg3, 0)?;
++    let arg3_size = usize::try_from(read_u32_le(arg3, 4)?).ok()?;
++    let arg3_len = match arg3_type {
++        DSM_TYPE_BUFFER => checked_add_usize(8, arg3_size)?,
++        DSM_TYPE_PACKAGE => encoded_dsm_package_len(arg3)?,
++        _ => return None,
++    };
++    let total_len = checked_add_usize(DSM_FIXED_LEN, arg3_len)?;
++    (total_len <= buf.len()).then_some(total_len)
++}
++
+ /// PCI Express Extended Capabilities information
+ #[derive(Copy, Clone)]
+ struct ExtCap {
+@@ -2089,15 +2149,28 @@ impl PciDevice for VfioPciDevice {
+                         arg3_size,
+                         &args[..48],
+                     );
+-                    let res = match self.device.acpi_dsm(&args) {
++                    let dsm_len = match encoded_dsm_len(&args) {
++                        Some(len) => len,
++                        None => {
++                            warn!(
++                                "{} failed to decode DSM payload length; falling back to {} bytes",
++                                self.debug_label(),
++                                args.len()
++                            );
++                            args.len()
++                        }
++                    };
++                    info!("{} DSM request_len={}", self.debug_label(), dsm_len);
++                    let res = match self.device.acpi_dsm(&args[..dsm_len]) {
+                         Ok(r) => r,
+                         Err(e) => {
+                             error!(
+-                                "{} failed to call DSM: {} (arg3_type={} arg3_size={})",
++                                "{} failed to call DSM: {} (arg3_type={} arg3_size={} request_len={})",
+                                 self.debug_label(),
+                                 e,
+                                 arg3_type,
+-                                arg3_size
++                                arg3_size,
++                                dsm_len
+                             );
+                             return;
+                         }
+-- 
+2.54.0
+

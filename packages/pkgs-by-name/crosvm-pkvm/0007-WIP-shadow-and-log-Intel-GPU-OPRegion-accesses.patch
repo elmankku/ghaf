@@ -1,0 +1,184 @@
+From c427743f8c16e86fcb2080b541b4f317916f4b93 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Markku=20Ahvenj=C3=A4rvi?= <mankku@gmail.com>
+Date: Mon, 8 Jun 2026 14:03:55 +0300
+Subject: [PATCH 07/10] WIP: shadow and log Intel GPU OPRegion accesses
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Markku Ahvenjärvi <mankku@gmail.com>
+---
+ devices/src/pci/vfio_pci.rs | 110 +++++++++++++++++++++++++++++++++++-
+ 1 file changed, 107 insertions(+), 3 deletions(-)
+
+diff --git a/devices/src/pci/vfio_pci.rs b/devices/src/pci/vfio_pci.rs
+index 7999661fda3c..e1e7d61a0ede 100644
+--- a/devices/src/pci/vfio_pci.rs
++++ b/devices/src/pci/vfio_pci.rs
+@@ -656,11 +656,12 @@ enum DeviceData {
+     IntelGfxData { opregion: Option<IntelGfxOpRegion> },
+ }
+ 
+-#[derive(Copy, Clone)]
++#[derive(Clone)]
+ struct IntelGfxOpRegion {
+     index: usize,
+     addr: u64,
+     size: u64,
++    shadow: Arc<Mutex<Vec<u8>>>,
+ }
+ 
+ const DSM_ARG0_LEN: usize = 16;
+@@ -951,11 +952,94 @@ impl VfioPciDevice {
+ 
+     fn intel_gfx_opregion(&self) -> Option<IntelGfxOpRegion> {
+         match &self.device_data {
+-            Some(DeviceData::IntelGfxData { opregion }) => *opregion,
++            Some(DeviceData::IntelGfxData { opregion }) => opregion.clone(),
+             None => None,
+         }
+     }
+ 
++    fn read_opregion_shadow(&self, opregion: &IntelGfxOpRegion, offset: u64, data: &mut [u8]) {
++        let Ok(start) = usize::try_from(offset) else {
++            warn!(
++                "{} opregion shadow read offset conversion failed: {:#x}",
++                self.debug_label(),
++                offset
++            );
++            data.fill(0);
++            return;
++        };
++        let Some(end) = start.checked_add(data.len()) else {
++            warn!(
++                "{} opregion shadow read overflow offset={:#x} len={}",
++                self.debug_label(),
++                offset,
++                data.len()
++            );
++            data.fill(0);
++            return;
++        };
++
++        let shadow = opregion.shadow.lock();
++        if let Some(src) = shadow.get(start..end) {
++            data.copy_from_slice(src);
++            info!(
++                "{} opregion shadow read offset={:#x} len={} data={:02x?}",
++                self.debug_label(),
++                offset,
++                data.len(),
++                data
++            );
++        } else {
++            warn!(
++                "{} opregion shadow read out of range offset={:#x} len={} shadow_len={}",
++                self.debug_label(),
++                offset,
++                data.len(),
++                shadow.len()
++            );
++            data.fill(0);
++        }
++    }
++
++    fn write_opregion_shadow(&self, opregion: &IntelGfxOpRegion, offset: u64, data: &[u8]) {
++        let Ok(start) = usize::try_from(offset) else {
++            warn!(
++                "{} opregion shadow write offset conversion failed: {:#x}",
++                self.debug_label(),
++                offset
++            );
++            return;
++        };
++        let Some(end) = start.checked_add(data.len()) else {
++            warn!(
++                "{} opregion shadow write overflow offset={:#x} len={}",
++                self.debug_label(),
++                offset,
++                data.len()
++            );
++            return;
++        };
++
++        let mut shadow = opregion.shadow.lock();
++        if let Some(dst) = shadow.get_mut(start..end) {
++            dst.copy_from_slice(data);
++            info!(
++                "{} opregion shadow write offset={:#x} len={} data={:02x?}",
++                self.debug_label(),
++                offset,
++                data.len(),
++                data
++            );
++        } else {
++            warn!(
++                "{} opregion shadow write out of range offset={:#x} len={} shadow_len={}",
++                self.debug_label(),
++                offset,
++                data.len(),
++                shadow.len()
++            );
++        }
++    }
++
+     fn enable_acpi_notification(&mut self) -> Result<(), PciDeviceError> {
+         if let Some(ref acpi_notification_evt) = self.acpi_notification_evt {
+             return self
+@@ -1856,11 +1940,20 @@ impl PciDevice for VfioPciDevice {
+                 size,
+                 prefetchable: false,
+             });
++            let mut shadow = vec![0u8; size as usize];
++            self.device.region_read(index as usize, &mut shadow, 0);
++            info!(
++                "{} initialized opregion shadow size={:#x} prefix={:02x?}",
++                self.debug_label(),
++                size,
++                &shadow[..shadow.len().min(64)]
++            );
+             self.device_data = Some(DeviceData::IntelGfxData {
+                 opregion: Some(IntelGfxOpRegion {
+                     index: index as usize,
+                     addr: bar_addr,
+                     size,
++                    shadow: Arc::new(Mutex::new(shadow)),
+                 }),
+             });
+             self.config.write_config(bar_addr as u32, 0xFC);
+@@ -2043,6 +2136,11 @@ impl PciDevice for VfioPciDevice {
+                 .region_write(VFIO_PCI_CONFIG_REGION_INDEX as usize, data, start);
+         }
+ 
++        if start == 0xFC && data.len() == 4 {
++            let value = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
++            info!("{} guest wrote ASLS={:#x}", self.debug_label(), value);
++        }
++
+         // if guest enable memory access, then enable bar mappable once
+         if start == PCI_COMMAND as u64
+             && data.len() == 2
+@@ -2205,13 +2303,19 @@ impl PciDevice for VfioPciDevice {
+                 return;
+             }
+         }
++        if let Some(opregion) = self.intel_gfx_opregion() {
++            if opregion.index == bar_index {
++                self.read_opregion_shadow(&opregion, offset, data);
++                return;
++            }
++        }
+         self.device.region_read(bar_index, data, offset);
+     }
+ 
+     fn write_bar(&mut self, bar_index: PciBarIndex, offset: u64, data: &[u8]) {
+-        // Ignore igd opregion's write
+         if let Some(opregion) = self.intel_gfx_opregion() {
+             if opregion.index == bar_index {
++                self.write_opregion_shadow(&opregion, offset, data);
+                 return;
+             }
+         }
+-- 
+2.54.0
+

@@ -1,0 +1,237 @@
+From 1351f6e469f84a081d7cb0c81436fb343ba7bceb Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Markku=20Ahvenj=C3=A4rvi?= <mankku@gmail.com>
+Date: Mon, 1 Jun 2026 14:33:31 +0300
+Subject: [PATCH 01/10] pci: handle Intel GPU OpRegion access
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Markku Ahvenjärvi <mankku@gmail.com>
+---
+ devices/src/pci/pci_device.rs | 28 ++++++++--
+ devices/src/pci/vfio_pci.rs   | 99 +++++++++++++++++++++++++++--------
+ 2 files changed, 102 insertions(+), 25 deletions(-)
+
+diff --git a/devices/src/pci/pci_device.rs b/devices/src/pci/pci_device.rs
+index 09332804b2ee..e2c33bdd2e48 100644
+--- a/devices/src/pci/pci_device.rs
++++ b/devices/src/pci/pci_device.rs
+@@ -368,6 +368,21 @@ pub trait PciDevice: Send + Suspendable {
+     /// Returns the configuration of a base address register, if present.
+     fn get_bar_configuration(&self, bar_num: usize) -> Option<PciBarConfiguration>;
+ 
++    /// Finds the MMIO region containing an access specified by `address` and `size`.
++    ///
++    /// By default this searches only PCI BARs, but devices may override it to expose
++    /// additional MMIO regions that are not represented by a standard PCI BAR.
++    fn find_mmio_region(&self, address: u64, size: usize) -> Option<(PciBarIndex, u64)> {
++        find_bar_and_offset(self, address, size)
++    }
++
++    /// Returns additional ranges that should be treated as device-visible MMIO or I/O.
++    ///
++    /// The default implementation returns none.
++    fn get_additional_ranges(&self) -> Vec<(BusRange, BusType)> {
++        Vec::new()
++    }
++
+     /// Register any capabilties specified by the device.
+     fn register_device_capabilities(&mut self) -> Result<()> {
+         Ok(())
+@@ -555,7 +570,7 @@ fn trace_data(data: &[u8], offset: u64) -> u32 {
+ /// is ever added, address space information will need to be added to `BusDevice::read()` and
+ /// `BusDevice::write()` and passed along to this function.
+ fn find_bar_and_offset(
+-    device: &impl PciDevice,
++    device: &(impl PciDevice + ?Sized),
+     address: u64,
+     size: usize,
+ ) -> Option<(PciBarIndex, u64)> {
+@@ -605,7 +620,7 @@ impl<T: PciDevice> BusDevice for T {
+     }
+ 
+     fn read(&mut self, info: BusAccessInfo, data: &mut [u8]) {
+-        if let Some((bar_index, offset)) = find_bar_and_offset(self, info.address, data.len()) {
++        if let Some((bar_index, offset)) = self.find_mmio_region(info.address, data.len()) {
+             self.read_bar(bar_index, offset, data);
+         } else {
+             error!("PciDevice::read({:#x}) did not match a BAR", info.address);
+@@ -613,7 +628,7 @@ impl<T: PciDevice> BusDevice for T {
+     }
+ 
+     fn write(&mut self, info: BusAccessInfo, data: &[u8]) {
+-        if let Some((bar_index, offset)) = find_bar_and_offset(self, info.address, data.len()) {
++        if let Some((bar_index, offset)) = self.find_mmio_region(info.address, data.len()) {
+             self.write_bar(bar_index, offset, data);
+         } else {
+             error!("PciDevice::write({:#x}) did not match a BAR", info.address);
+@@ -723,6 +738,7 @@ impl<T: PciDevice> BusDevice for T {
+                 ));
+             }
+         }
++        ranges.extend(self.get_additional_ranges());
+         ranges
+     }
+ 
+@@ -765,6 +781,12 @@ impl<T: PciDevice + ?Sized> PciDevice for Box<T> {
+     fn get_bar_configuration(&self, bar_num: usize) -> Option<PciBarConfiguration> {
+         (**self).get_bar_configuration(bar_num)
+     }
++    fn find_mmio_region(&self, address: u64, size: usize) -> Option<(PciBarIndex, u64)> {
++        (**self).find_mmio_region(address, size)
++    }
++    fn get_additional_ranges(&self) -> Vec<(BusRange, BusType)> {
++        (**self).get_additional_ranges()
++    }
+     fn register_device_capabilities(&mut self) -> Result<()> {
+         (**self).register_device_capabilities()
+     }
+diff --git a/devices/src/pci/vfio_pci.rs b/devices/src/pci/vfio_pci.rs
+index 28b393141575..8d5317f4f63b 100644
+--- a/devices/src/pci/vfio_pci.rs
++++ b/devices/src/pci/vfio_pci.rs
+@@ -652,7 +652,14 @@ fn is_skipped_ext_cap(cap_id: u16) -> bool {
+ }
+ 
+ enum DeviceData {
+-    IntelGfxData { opregion_index: u32 },
++    IntelGfxData { opregion: Option<IntelGfxOpRegion> },
++}
++
++#[derive(Copy, Clone)]
++struct IntelGfxOpRegion {
++    index: usize,
++    addr: u64,
++    size: u64,
+ }
+ 
+ /// PCI Express Extended Capabilities information
+@@ -831,9 +838,7 @@ impl VfioPciDevice {
+         let is_intel_gfx =
+             base_class_code == PciClassCode::DisplayController && vendor_id == PCI_VENDOR_ID_INTEL;
+         let device_data = if is_intel_gfx {
+-            Some(DeviceData::IntelGfxData {
+-                opregion_index: u32::MAX,
+-            })
++            Some(DeviceData::IntelGfxData { opregion: None })
+         } else {
+             None
+         };
+@@ -883,6 +888,13 @@ impl VfioPciDevice {
+         matches!(self.device_data, Some(DeviceData::IntelGfxData { .. }))
+     }
+ 
++    fn intel_gfx_opregion(&self) -> Option<IntelGfxOpRegion> {
++        match &self.device_data {
++            Some(DeviceData::IntelGfxData { opregion }) => *opregion,
++            None => None,
++        }
++    }
++
+     fn enable_acpi_notification(&mut self) -> Result<(), PciDeviceError> {
+         if let Some(ref acpi_notification_evt) = self.acpi_notification_evt {
+             return self
+@@ -1778,18 +1790,12 @@ impl PciDevice for VfioPciDevice {
+                 prefetchable: false,
+             });
+             self.device_data = Some(DeviceData::IntelGfxData {
+-                opregion_index: index,
+-            });
+-
+-            self.mmio_regions.push(
+-                PciBarConfiguration::new(
+-                    index as usize,
++                opregion: Some(IntelGfxOpRegion {
++                    index: index as usize,
++                    addr: bar_addr,
+                     size,
+-                    PciBarRegionType::Memory32BitRegion,
+-                    PciBarPrefetchable::NotPrefetchable,
+-                )
+-                .set_address(bar_addr),
+-            );
++                }),
++            });
+             self.config.write_config(bar_addr as u32, 0xFC);
+         }
+ 
+@@ -1811,6 +1817,59 @@ impl PciDevice for VfioPciDevice {
+         None
+     }
+ 
++    fn find_mmio_region(&self, address: u64, size: usize) -> Option<(PciBarIndex, u64)> {
++        if let Some(opregion) = self.intel_gfx_opregion() {
++            if size != 0 {
++                if let Some(offset) = address.checked_sub(opregion.addr) {
++                    if let Some(max_offset) = opregion.size.checked_sub(size as u64) {
++                        if offset <= max_offset {
++                            return Some((opregion.index, offset));
++                        }
++                    }
++                }
++            }
++        }
++
++        for bar_index in 0..NUM_BAR_REGS {
++            if let Some(bar_info) = self.get_bar_configuration(bar_index) {
++                if !bar_info.is_memory() {
++                    continue;
++                }
++
++                let Some(offset) = address.checked_sub(bar_info.address()) else {
++                    continue;
++                };
++
++                let Some(max_offset) = bar_info.size().checked_sub(size as u64) else {
++                    continue;
++                };
++
++                if offset <= max_offset {
++                    return Some((bar_index, offset));
++                }
++            }
++        }
++
++        None
++    }
++
++    fn get_additional_ranges(&self) -> Vec<(crate::bus::BusRange, crate::bus::BusType)> {
++        let mut ranges = Vec::new();
++        if let Some(opregion) = self.intel_gfx_opregion() {
++            let command: u8 = self.config.read_config(PCI_COMMAND);
++            if command & PCI_COMMAND_MEMORY == PCI_COMMAND_MEMORY {
++                ranges.push((
++                    crate::bus::BusRange {
++                        base: opregion.addr,
++                        len: opregion.size,
++                    },
++                    crate::bus::BusType::Mmio,
++                ));
++            }
++        }
++        ranges
++    }
++
+     fn register_device_capabilities(&mut self) -> Result<(), PciDeviceError> {
+         Ok(())
+     }
+@@ -2055,13 +2114,9 @@ impl PciDevice for VfioPciDevice {
+ 
+     fn write_bar(&mut self, bar_index: PciBarIndex, offset: u64, data: &[u8]) {
+         // Ignore igd opregion's write
+-        if let Some(device_data) = &self.device_data {
+-            match *device_data {
+-                DeviceData::IntelGfxData { opregion_index } => {
+-                    if opregion_index == bar_index as u32 {
+-                        return;
+-                    }
+-                }
++        if let Some(opregion) = self.intel_gfx_opregion() {
++            if opregion.index == bar_index {
++                return;
+             }
+         }
+ 
+-- 
+2.54.0
+

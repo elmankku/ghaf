@@ -1,0 +1,64 @@
+From 937d31dbd09dd35abe657cd1da750badc6a113a8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Markku=20Ahvenj=C3=A4rvi?= <mankku@gmail.com>
+Date: Fri, 5 Jun 2026 13:29:10 +0300
+Subject: [PATCH 04/10] DEBUG: GPU ACPI errors
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Markku Ahvenjärvi <mankku@gmail.com>
+---
+ devices/src/pci/vfio_pci.rs | 24 +++++++++++++++++++++++-
+ 1 file changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/devices/src/pci/vfio_pci.rs b/devices/src/pci/vfio_pci.rs
+index 8d5317f4f63b..b29fafc2012a 100644
+--- a/devices/src/pci/vfio_pci.rs
++++ b/devices/src/pci/vfio_pci.rs
+@@ -1326,6 +1326,12 @@ impl VfioPciDevice {
+ 
+         if let Err(e) = self.enable_acpi_notification() {
+             error!("{}: {}", self.debug_label(), e);
++        } else {
++            info!(
++                "{} enabled ACPI notifications on VFIO irq index {}",
++                self.debug_label(),
++                VFIO_PCI_ACPI_NTFY_IRQ_INDEX
++            );
+         }
+ 
+         let mut msix_evt = Vec::new();
+@@ -2074,13 +2080,29 @@ impl PciDevice for VfioPciDevice {
+                         error!("failed to read DSM Args: {}", e);
+                         return;
+                     }
++                    let arg3_type = u32::from_le_bytes([args[32], args[33], args[34], args[35]]);
++                    let arg3_size = u32::from_le_bytes([args[36], args[37], args[38], args[39]]);
++                    info!(
++                        "{} DSM trap arg3_type={} arg3_size={} raw_prefix={:02x?}",
++                        self.debug_label(),
++                        arg3_type,
++                        arg3_size,
++                        &args[..48],
++                    );
+                     let res = match self.device.acpi_dsm(&args) {
+                         Ok(r) => r,
+                         Err(e) => {
+-                            error!("failed to call DSM: {}", e);
++                            error!(
++                                "{} failed to call DSM: {} (arg3_type={} arg3_size={})",
++                                self.debug_label(),
++                                e,
++                                arg3_type,
++                                arg3_size
++                            );
+                             return;
+                         }
+                     };
++                    info!("{} DSM result_len={}", self.debug_label(), res.len());
+                     if let Err(e) = shm.write_slice(&res, 0) {
+                         error!("failed to write DSM result: {}", e);
+                         return;
+-- 
+2.54.0
+

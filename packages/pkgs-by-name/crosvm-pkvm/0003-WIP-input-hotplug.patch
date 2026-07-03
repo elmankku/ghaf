@@ -1,0 +1,856 @@
+From 34451f43d09c71a8471b196332a0fef70a5f7579 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Markku=20Ahvenj=C3=A4rvi?= <mankku@gmail.com>
+Date: Tue, 2 Jun 2026 11:04:25 +0300
+Subject: [PATCH 03/10] WIP: input hotplug
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Markku Ahvenjärvi <mankku@gmail.com>
+---
+ devices/src/lib.rs                          |   2 +
+ devices/src/pci/mod.rs                      |   2 +
+ devices/src/pci/pci_hotplug.rs              |  90 ++++++++++++++
+ src/crosvm/cmdline.rs                       |  45 +++++++
+ src/crosvm/sys/linux.rs                     | 131 +++++++++++++++++++-
+ src/crosvm/sys/linux/jail_warden.rs         |  18 +++
+ src/crosvm/sys/linux/pci_hotplug_helpers.rs |  73 +++++++++++
+ src/crosvm/sys/linux/pci_hotplug_manager.rs |  59 ++++++++-
+ src/main.rs                                 |  43 +++++++
+ vm_control/src/client.rs                    |  50 ++++++++
+ vm_control/src/lib.rs                       |  15 +++
+ 11 files changed, 521 insertions(+), 7 deletions(-)
+
+diff --git a/devices/src/lib.rs b/devices/src/lib.rs
+index bc83974470d3..011f34baa710 100644
+--- a/devices/src/lib.rs
++++ b/devices/src/lib.rs
+@@ -122,6 +122,8 @@ pub use self::pci::PreferredIrq;
+ pub use self::pci::ResourceCarrier;
+ pub use self::pci::StubPciDevice;
+ pub use self::pci::StubPciParameters;
++#[cfg(feature = "pci-hotplug")]
++pub use self::pci::VirtioInputResourceCarrier;
+ pub use self::pflash::Pflash;
+ pub use self::pflash::PflashParameters;
+ pub use self::pl030::Pl030;
+diff --git a/devices/src/pci/mod.rs b/devices/src/pci/mod.rs
+index eea5496ff857..a0f12b6e47b4 100644
+--- a/devices/src/pci/mod.rs
++++ b/devices/src/pci/mod.rs
+@@ -71,6 +71,8 @@ pub use self::pci_hotplug::IntxParameter;
+ pub use self::pci_hotplug::NetResourceCarrier;
+ #[cfg(feature = "pci-hotplug")]
+ pub use self::pci_hotplug::ResourceCarrier;
++#[cfg(feature = "pci-hotplug")]
++pub use self::pci_hotplug::VirtioInputResourceCarrier;
+ pub use self::pci_root::PciConfigIo;
+ pub use self::pci_root::PciConfigMmio;
+ pub use self::pci_root::PciMmioMapper;
+diff --git a/devices/src/pci/pci_hotplug.rs b/devices/src/pci/pci_hotplug.rs
+index 568b62a1e472..ea0148ee0fdf 100644
+--- a/devices/src/pci/pci_hotplug.rs
++++ b/devices/src/pci/pci_hotplug.rs
+@@ -12,8 +12,11 @@ use base::RawDescriptor;
+ use base::Tube;
+ use serde::Deserialize;
+ use serde::Serialize;
++use std::path::PathBuf;
+ use vm_control::api::VmMemoryClient;
+ 
++// FIXME: hotplug should not depend on net nor input: isolate interface specifics
++#[cfg(feature = "net")]
+ use crate::virtio::NetParameters;
+ use crate::IrqLevelEvent;
+ use crate::PciAddress;
+@@ -31,6 +34,8 @@ pub type Result<T> = std::result::Result<T, PciDeviceError>;
+ pub enum ResourceCarrier {
+     /// virtio-net device.
+     VirtioNet(NetResourceCarrier),
++    /// virtio-input device backed by a host evdev node.
++    VirtioInput(VirtioInputResourceCarrier),
+ }
+ 
+ impl ResourceCarrier {
+@@ -38,6 +43,7 @@ impl ResourceCarrier {
+     pub fn debug_label(&self) -> String {
+         match self {
+             ResourceCarrier::VirtioNet(c) => c.debug_label(),
++            ResourceCarrier::VirtioInput(c) => c.debug_label(),
+         }
+     }
+ 
+@@ -46,6 +52,7 @@ impl ResourceCarrier {
+     pub fn keep_rds(&self) -> Vec<RawDescriptor> {
+         match self {
+             ResourceCarrier::VirtioNet(c) => c.keep_rds(),
++            ResourceCarrier::VirtioInput(c) => c.keep_rds(),
+         }
+     }
+     /// Allocate the preferred address to the device.
+@@ -56,6 +63,7 @@ impl ResourceCarrier {
+     ) -> Result<()> {
+         match self {
+             ResourceCarrier::VirtioNet(c) => c.allocate_address(preferred_address, resources),
++            ResourceCarrier::VirtioInput(c) => c.allocate_address(preferred_address, resources),
+         }
+     }
+     /// Assign a legacy PCI IRQ to this device.
+@@ -64,6 +72,7 @@ impl ResourceCarrier {
+     pub fn assign_irq(&mut self, irq_evt: IrqLevelEvent, pin: PciInterruptPin, irq_num: u32) {
+         match self {
+             ResourceCarrier::VirtioNet(c) => c.assign_irq(irq_evt, pin, irq_num),
++            ResourceCarrier::VirtioInput(c) => c.assign_irq(irq_evt, pin, irq_num),
+         }
+     }
+ }
+@@ -114,6 +123,87 @@ pub struct NetResourceCarrier {
+     pub vm_control_tube: Tube,
+ }
+ 
++/// A VirtioInputResourceCarrier is a ResourceCarrier specialization for virtio-input devices.
++#[derive(Serialize, Deserialize)]
++pub struct VirtioInputResourceCarrier {
++    /// Host evdev node to expose to the guest.
++    pub evdev_path: PathBuf,
++    /// msi_device_tube for VirtioPciDevice constructor.
++    pub msi_device_tube: Tube,
++    /// ioevent_vm_memory_client for VirtioPciDevice constructor.
++    pub ioevent_vm_memory_client: VmMemoryClient,
++    /// pci_address for the hotplugged device.
++    pub pci_address: Option<PciAddress>,
++    /// intx_parameter for assign_irq.
++    pub intx_parameter: Option<IntxParameter>,
++    /// vm_control_tube for VirtioPciDevice constructor.
++    pub vm_control_tube: Tube,
++}
++
++impl VirtioInputResourceCarrier {
++    /// Constructs VirtioInputResourceCarrier.
++    pub fn new(
++        evdev_path: PathBuf,
++        msi_device_tube: Tube,
++        ioevent_vm_memory_client: VmMemoryClient,
++        vm_control_tube: Tube,
++    ) -> Self {
++        Self {
++            evdev_path,
++            msi_device_tube,
++            ioevent_vm_memory_client,
++            pci_address: None,
++            intx_parameter: None,
++            vm_control_tube,
++        }
++    }
++
++    fn debug_label(&self) -> String {
++        format!("virtio-input({})", self.evdev_path.display())
++    }
++
++    fn keep_rds(&self) -> Vec<RawDescriptor> {
++        let mut keep_rds = vec![
++            self.msi_device_tube.as_raw_descriptor(),
++            self.ioevent_vm_memory_client.as_raw_descriptor(),
++        ];
++        if let Some(intx_parameter) = &self.intx_parameter {
++            keep_rds.extend(intx_parameter.irq_evt.as_raw_descriptors());
++        }
++        keep_rds
++    }
++
++    fn allocate_address(
++        &mut self,
++        preferred_address: PciAddress,
++        resources: &mut resources::SystemAllocator,
++    ) -> Result<()> {
++        match self.pci_address {
++            None => {
++                if resources.reserve_pci(preferred_address, self.debug_label()) {
++                    self.pci_address = Some(preferred_address);
++                } else {
++                    return Err(PciDeviceError::PciAllocationFailed);
++                }
++            }
++            Some(pci_address) => {
++                if pci_address != preferred_address {
++                    return Err(PciDeviceError::PciAllocationFailed);
++                }
++            }
++        }
++        Ok(())
++    }
++
++    fn assign_irq(&mut self, irq_evt: IrqLevelEvent, pin: PciInterruptPin, irq_num: u32) {
++        self.intx_parameter = Some(IntxParameter {
++            irq_evt,
++            pin,
++            irq_num,
++        });
++    }
++}
++
+ impl NetResourceCarrier {
+     ///Constructs NetResourceCarrier.
+     pub fn new(
+diff --git a/src/crosvm/cmdline.rs b/src/crosvm/cmdline.rs
+index e9543877be44..daba4ed09fbf 100644
+--- a/src/crosvm/cmdline.rs
++++ b/src/crosvm/cmdline.rs
+@@ -147,6 +147,8 @@ pub enum CrossPlatformCommands {
+     Powerbtn(PowerbtnCommand),
+     Sleepbtn(SleepCommand),
+     Gpe(GpeCommand),
++    #[cfg(feature = "pci-hotplug")]
++    Input(InputCommand),
+     Usb(UsbCommand),
+     Version(VersionCommand),
+     Vfio(VfioCrosvmCommand),
+@@ -424,6 +426,49 @@ pub struct UsbCommand {
+     pub command: UsbSubCommand,
+ }
+ 
++#[cfg(feature = "pci-hotplug")]
++#[derive(FromArgs)]
++#[argh(subcommand, name = "add")]
++/// Add an evdev-backed virtio-input device.
++pub struct InputAddSubCommand {
++    #[argh(positional)]
++    /// path to the evdev node on the host
++    pub evdev_path: PathBuf,
++    #[argh(positional, arg_name = "VM_SOCKET")]
++    /// VM Socket path
++    pub socket_path: String,
++}
++
++#[cfg(feature = "pci-hotplug")]
++#[derive(FromArgs)]
++#[argh(subcommand, name = "remove")]
++/// Remove a hotplugged input device by bus number.
++pub struct InputRemoveSubCommand {
++    #[argh(positional)]
++    /// bus number for device to remove
++    pub bus: u8,
++    #[argh(positional, arg_name = "VM_SOCKET")]
++    /// VM Socket path
++    pub socket_path: String,
++}
++
++#[cfg(feature = "pci-hotplug")]
++#[derive(FromArgs)]
++#[argh(subcommand)]
++pub enum InputSubCommand {
++    Add(InputAddSubCommand),
++    Remove(InputRemoveSubCommand),
++}
++
++#[cfg(feature = "pci-hotplug")]
++#[derive(FromArgs)]
++#[argh(subcommand, name = "input")]
++/// Manage hotplugged virtio-input devices.
++pub struct InputCommand {
++    #[argh(subcommand)]
++    pub command: InputSubCommand,
++}
++
+ #[cfg(feature = "gpu")]
+ #[derive(FromArgs)]
+ #[argh(subcommand, name = "gpu")]
+diff --git a/src/crosvm/sys/linux.rs b/src/crosvm/sys/linux.rs
+index f12b1fc9b37e..fd4d68c1d984 100644
+--- a/src/crosvm/sys/linux.rs
++++ b/src/crosvm/sys/linux.rs
+@@ -40,6 +40,8 @@ use std::iter;
+ use std::mem;
+ #[cfg(target_arch = "x86_64")]
+ use std::ops::RangeInclusive;
++#[cfg(feature = "pci-hotplug")]
++use std::os::unix::fs::MetadataExt;
+ use std::os::unix::process::ExitStatusExt;
+ use std::path::Path;
+ #[cfg(target_arch = "aarch64")]
+@@ -142,6 +144,8 @@ use devices::PvPanicPciDevice;
+ #[cfg(feature = "pci-hotplug")]
+ use devices::ResourceCarrier;
+ use devices::StubPciDevice;
++#[cfg(feature = "pci-hotplug")]
++use devices::VirtioInputResourceCarrier;
+ use devices::VirtioPciDevice;
+ #[cfg(feature = "usb")]
+ use devices::XhciController;
+@@ -2803,7 +2807,115 @@ fn handle_hotplug_net_command<V: VmArch, Vcpu: VcpuArch>(
+             &tap_name,
+         ),
+         NetControlCommand::RemoveTap(bus) => {
+-            handle_hotplug_net_remove(linux, sys_allocator, hotplug_manager, bus)
++            handle_hotplug_remove(linux, sys_allocator, hotplug_manager, bus)
++        }
++    }
++}
++
++#[cfg(feature = "pci-hotplug")]
++fn evdev_rdev(path: &Path) -> anyhow::Result<u64> {
++    let metadata = std::fs::metadata(path)
++        .with_context(|| format!("failed to stat evdev {}", path.display()))?;
++    Ok(metadata.rdev())
++}
++
++#[cfg(feature = "pci-hotplug")]
++fn add_hotplug_input<V: VmArch, Vcpu: VcpuArch>(
++    linux: &mut RunnableLinuxVm<V, Vcpu>,
++    sys_allocator: &mut SystemAllocator,
++    cfg: &Config,
++    add_control_tube: &mut impl FnMut(AnyControlTube),
++    hotplug_manager: &mut PciHotPlugManager,
++    evdev_path: &Path,
++) -> Result<u8> {
++    info!(
++        "creating hotplug virtio-input for evdev path {}",
++        evdev_path.display()
++    );
++
++    let new = evdev_rdev(evdev_path)?;
++    let has_boot_device = cfg.virtio_input.iter().any(|vi| {
++        if let InputDeviceOption::Evdev { path } = vi {
++            return match evdev_rdev(path) {
++                Ok(existing) => new == existing,
++                Err(e) => {
++                    warn!("{e}");
++                    false
++                }
++            };
++        }
++        false
++    });
++
++    let has_hotplugged_device = hotplug_manager
++        .hotplugged_devices()
++        .filter_map(|d| match d.device {
++            pci_hotplug_manager::HotplugDevice::Input(r) => Some(r.rdev),
++            _ => None,
++        })
++        .any(|rdev| rdev == new);
++
++    if has_boot_device || has_hotplugged_device {
++        bail!("Input evdev {} already exists", evdev_path.display());
++    }
++
++    let (msi_host_tube, msi_device_tube) = Tube::pair().context("create tube")?;
++    add_control_tube(AnyControlTube::IrqTube(msi_host_tube));
++    let (ioevent_host_tube, ioevent_device_tube) = Tube::pair().context("create tube")?;
++    let ioevent_vm_memory_client = VmMemoryClient::new(ioevent_device_tube);
++    add_control_tube(
++        VmMemoryTube {
++            tube: ioevent_host_tube,
++            expose_with_viommu: false,
++        }
++        .into(),
++    );
++    let (vm_control_host_tube, vm_control_device_tube) = Tube::pair().context("create tube")?;
++    add_control_tube(TaggedControlTube::Vm(vm_control_host_tube).into());
++    let input_carrier_device = VirtioInputResourceCarrier::new(
++        evdev_path.to_path_buf(),
++        msi_device_tube,
++        ioevent_vm_memory_client,
++        vm_control_device_tube,
++    );
++    let bus = hotplug_manager.hotplug_device(
++        vec![ResourceCarrier::VirtioInput(input_carrier_device)],
++        linux,
++        sys_allocator,
++    )?;
++    info!(
++        "hotplug virtio-input created for evdev path {} on pci bus {}",
++        evdev_path.display(),
++        bus
++    );
++    Ok(bus)
++}
++
++#[cfg(feature = "pci-hotplug")]
++fn handle_hotplug_input_command<V: VmArch, Vcpu: VcpuArch>(
++    input_cmd: InputControlCommand,
++    linux: &mut RunnableLinuxVm<V, Vcpu>,
++    sys_allocator: &mut SystemAllocator,
++    cfg: &Config,
++    add_control_tube: &mut impl FnMut(AnyControlTube),
++    hotplug_manager: &mut PciHotPlugManager,
++) -> VmResponse {
++    info!("received vm hotplug input command: {:?}", input_cmd);
++    match input_cmd {
++        InputControlCommand::AddEvdev { path } => add_hotplug_input(
++            linux,
++            sys_allocator,
++            cfg,
++            add_control_tube,
++            hotplug_manager,
++            path.as_path(),
++        )
++        .map_or_else(
++            |e| VmResponse::ErrString(format!("{e:?}")),
++            |bus| VmResponse::PciHotPlugResponse { bus },
++        ),
++        InputControlCommand::RemoveEvdev { bus } => {
++            handle_hotplug_remove(linux, sys_allocator, hotplug_manager, bus)
+         }
+     }
+ }
+@@ -2843,7 +2955,7 @@ fn handle_hotplug_net_add<V: VmArch, Vcpu: VcpuArch>(
+ }
+ 
+ #[cfg(feature = "pci-hotplug")]
+-fn handle_hotplug_net_remove<V: VmArch, Vcpu: VcpuArch>(
++fn handle_hotplug_remove<V: VmArch, Vcpu: VcpuArch>(
+     linux: &mut RunnableLinuxVm<V, Vcpu>,
+     sys_allocator: &mut SystemAllocator,
+     hotplug_manager: &mut PciHotPlugManager,
+@@ -3256,6 +3368,21 @@ fn process_vm_request<V: VmArch + 'static, Vcpu: VcpuArch + 'static>(
+                 VmResponse::ErrString("PCI hotplug is not enabled.".to_owned())
+             }
+         }
++        #[cfg(feature = "pci-hotplug")]
++        VmRequest::HotPlugInputCommand(input_cmd) => {
++            if let Some(hotplug_manager) = state.hotplug_manager.as_mut() {
++                handle_hotplug_input_command(
++                    input_cmd,
++                    state.linux,
++                    &mut state.sys_allocator.lock(),
++                    state.cfg,
++                    &mut add_control_tube,
++                    hotplug_manager,
++                )
++            } else {
++                VmResponse::ErrString("PCI hotplug is not enabled.".to_owned())
++            }
++        }
+         #[cfg(feature = "registered_events")]
+         VmRequest::RegisterListener { socket_addr, event } => {
+             let (registered_tube, already_registered) =
+diff --git a/src/crosvm/sys/linux/jail_warden.rs b/src/crosvm/sys/linux/jail_warden.rs
+index 44cab7609fcf..ee18f1aaf405 100644
+--- a/src/crosvm/sys/linux/jail_warden.rs
++++ b/src/crosvm/sys/linux/jail_warden.rs
+@@ -40,7 +40,9 @@ use swap::SwapDeviceHelper;
+ use sync::Mutex;
+ use vm_memory::GuestMemory;
+ 
++use crate::crosvm::sys::linux::pci_hotplug_helpers::build_hotplug_input_device;
+ use crate::crosvm::sys::linux::pci_hotplug_helpers::build_hotplug_net_device;
++use crate::crosvm::sys::linux::pci_hotplug_helpers::InputLocalParameters;
+ use crate::crosvm::sys::linux::pci_hotplug_helpers::NetLocalParameters;
+ use crate::crosvm::sys::linux::VirtioDeviceBuilder;
+ use crate::Config;
+@@ -198,6 +200,17 @@ fn jail_worker_process(
+                             build_hotplug_net_device(net_resource_carrier, net_local_parameters)?;
+                         (pci_device, jail)
+                     }
++                    ResourceCarrier::VirtioInput(input_resource_carrier) => {
++                        let jail =
++                            create_base_minijail(Path::new("/"), MAX_OPEN_FILES_FOR_JAIL_WARDEN)?;
++                        let input_local_parameters =
++                            InputLocalParameters::new(guest_memory.clone(), config.protection_type);
++                        let pci_device = build_hotplug_input_device(
++                            input_resource_carrier,
++                            input_local_parameters,
++                        )?;
++                        (pci_device, jail)
++                    }
+                 };
+                 let mut keep_rds = vec![];
+                 syslog::push_descriptors(&mut keep_rds);
+@@ -253,6 +266,11 @@ impl JailWarden for PermissiveJailWarden {
+                     NetLocalParameters::new(self.guest_memory.clone(), self.protection_type);
+                 build_hotplug_net_device(net_resource_carrier, net_local_parameters)?
+             }
++            ResourceCarrier::VirtioInput(input_resource_carrier) => {
++                let input_local_parameters =
++                    InputLocalParameters::new(self.guest_memory.clone(), self.protection_type);
++                build_hotplug_input_device(input_resource_carrier, input_local_parameters)?
++            }
+         };
+         Ok((Arc::new(Mutex::new(pci_device)), 0))
+     }
+diff --git a/src/crosvm/sys/linux/pci_hotplug_helpers.rs b/src/crosvm/sys/linux/pci_hotplug_helpers.rs
+index b23790d3c697..b9ac02bf36e8 100644
+--- a/src/crosvm/sys/linux/pci_hotplug_helpers.rs
++++ b/src/crosvm/sys/linux/pci_hotplug_helpers.rs
+@@ -8,12 +8,16 @@
+ 
+ use anyhow::Context;
+ use anyhow::Result;
++use base::open_file_or_duplicate;
++use devices::virtio;
+ use devices::HotPluggable;
+ use devices::IntxParameter;
+ use devices::NetResourceCarrier;
+ use devices::PciDevice;
++use devices::VirtioInputResourceCarrier;
+ use devices::VirtioPciDevice;
+ use hypervisor::ProtectionType;
++use std::fs::OpenOptions;
+ use vm_memory::GuestMemory;
+ 
+ use crate::crosvm::sys::linux::VirtioDeviceBuilder;
+@@ -60,6 +64,59 @@ pub fn build_hotplug_net_device(
+     Ok(Box::new(virtio_pci_device))
+ }
+ 
++/// Builds HotPlugPci from VirtioInputResourceCarrier and InputLocalParameters.
++pub fn build_hotplug_input_device(
++    input_carrier_device: VirtioInputResourceCarrier,
++    input_local_parameters: InputLocalParameters,
++) -> Result<Box<dyn HotPluggable>> {
++    let pci_address = input_carrier_device
++        .pci_address
++        .context("PCI address not allocated")?;
++    let dev_file = open_file_or_duplicate(
++        &input_carrier_device.evdev_path,
++        OpenOptions::new().read(true).write(true),
++    )
++    .with_context(|| {
++        format!(
++            "open hotplug input evdev {}",
++            input_carrier_device.evdev_path.display()
++        )
++    })?;
++    let virtio_device = virtio::input::new_evdev(
++        dev_file,
++        virtio::base_features(input_local_parameters.protection_type),
++    )
++    .context("create virtio input device")?;
++    let mut virtio_pci_device = VirtioPciDevice::new(
++        input_local_parameters.guest_memory,
++        Box::new(virtio_device),
++        input_carrier_device.msi_device_tube,
++        true,
++        None,
++        input_carrier_device.ioevent_vm_memory_client,
++        input_carrier_device.vm_control_tube,
++    )
++    .context("create virtio PCI device")?;
++    virtio_pci_device
++        .set_pci_address(pci_address)
++        .context("set PCI address")?;
++    virtio_pci_device
++        .configure_io_bars()
++        .context("configure IO BAR")?;
++    virtio_pci_device
++        .configure_device_bars()
++        .context("configure device BAR")?;
++    let IntxParameter {
++        irq_evt,
++        irq_num,
++        pin,
++    } = input_carrier_device
++        .intx_parameter
++        .context("Missing INTx parameter.")?;
++    virtio_pci_device.assign_irq(irq_evt, pin, irq_num);
++    Ok(Box::new(virtio_pci_device))
++}
++
+ /// Additional parameters required on the destination process to configure net VirtioPciDevice.
+ pub struct NetLocalParameters {
+     guest_memory: GuestMemory,
+@@ -75,3 +132,19 @@ impl NetLocalParameters {
+         }
+     }
+ }
++
++/// Additional parameters required on the destination process to configure input VirtioPciDevice.
++pub struct InputLocalParameters {
++    guest_memory: GuestMemory,
++    protection_type: ProtectionType,
++}
++
++impl InputLocalParameters {
++    /// Constructs InputLocalParameters.
++    pub fn new(guest_memory: GuestMemory, protection_type: ProtectionType) -> Self {
++        Self {
++            guest_memory,
++            protection_type,
++        }
++    }
++}
+diff --git a/src/crosvm/sys/linux/pci_hotplug_manager.rs b/src/crosvm/sys/linux/pci_hotplug_manager.rs
+index e98c1932c5f7..46f9729f5388 100644
+--- a/src/crosvm/sys/linux/pci_hotplug_manager.rs
++++ b/src/crosvm/sys/linux/pci_hotplug_manager.rs
+@@ -9,6 +9,7 @@ use std::cmp::Ordering;
+ use std::collections::BTreeMap;
+ use std::collections::HashMap;
+ use std::collections::VecDeque;
++use std::os::unix::fs::MetadataExt;
+ use std::sync::mpsc;
+ use std::sync::Arc;
+ 
+@@ -111,15 +112,33 @@ impl WorkerClient {
+ struct PortManagerStub {
+     /// index of downstream bus
+     downstream_bus: u8,
++    // FIXME: documentation
+     /// Map of hotplugged devices, and system resources that can be released when device is
+     /// removed.
+-    devices: HashMap<PciAddress, RecoverableResource>,
++    devices: HashMap<PciAddress, HotpluggedDevice>,
+ }
+ 
++// TODO: comments and naming
++pub(crate) enum HotplugDevice {
++    Net,
++    Input(InputHostResource),
++}
++
++pub(crate) struct InputHostResource {
++    pub rdev: u64,
++}
++
++// FIXME: Documentation
+ /// System resources that can be released when a hotplugged device is removed.
+-struct RecoverableResource {
++struct HotpluggedDevice {
+     irq_num: u32,
+     irq_evt: IrqLevelEvent,
++    hotplug_device: HotplugDevice,
++}
++
++pub(crate) struct HotplugDeviceView<'a> {
++    pub pci_addr: &'a PciAddress,
++    pub device: &'a HotplugDevice,
+ }
+ 
+ /// Control commands to worker.
+@@ -830,6 +849,19 @@ impl PciHotPlugManager {
+                 _ => (PciInterruptPin::IntD, 3),
+             };
+             resource_carrier.assign_irq(irq_evt.try_clone()?, pin, irq_num);
++
++            // FIXME: this needs to be abstracted away.
++            let hotplug_device = match &resource_carrier {
++                ResourceCarrier::VirtioNet(_) => HotplugDevice::Net,
++                ResourceCarrier::VirtioInput(input) => HotplugDevice::Input(InputHostResource {
++                    rdev: std::fs::metadata(&input.evdev_path)
++                        .with_context(|| {
++                            format!("failed to stat evdev {}", input.evdev_path.display())
++                        })?
++                        .rdev(),
++                }),
++            };
++
+             let (proxy_device, pid) = self
+                 .jail_warden
+                 .make_proxy_device(resource_carrier)
+@@ -854,9 +886,14 @@ impl PciHotPlugManager {
+                 key: hotplug_key,
+                 device: proxy_device,
+             });
+-            port_stub
+-                .devices
+-                .insert(device_address, RecoverableResource { irq_num, irq_evt });
++            port_stub.devices.insert(
++                device_address,
++                HotpluggedDevice {
++                    irq_num,
++                    irq_evt,
++                    hotplug_device,
++                },
++            );
+         }
+         // Ask worker to schedule hotplug signal.
+         match worker_client.send_worker_command(WorkerCommand::SignalHotPlug(
+@@ -918,6 +955,18 @@ impl PciHotPlugManager {
+         }
+         Ok(())
+     }
++
++    pub(crate) fn hotplugged_devices(&self) -> impl Iterator<Item = HotplugDeviceView<'_>> + '_ {
++        self.port_stubs.values().flat_map(|port_stub| {
++            port_stub
++                .devices
++                .iter()
++                .map(|(pci_addr, hotplugged_device)| HotplugDeviceView {
++                    pci_addr,
++                    device: &hotplugged_device.hotplug_device,
++                })
++        })
++    }
+ }
+ 
+ #[cfg(test)]
+diff --git a/src/main.rs b/src/main.rs
+index 0d8fb8449fbd..de64c9353f0e 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -65,6 +65,10 @@ use vm_control::client::do_gpu_display_list;
+ use vm_control::client::do_gpu_display_remove;
+ #[cfg(feature = "gpu")]
+ use vm_control::client::do_gpu_set_display_mouse_mode;
++#[cfg(feature = "pci-hotplug")]
++use vm_control::client::do_input_add;
++#[cfg(feature = "pci-hotplug")]
++use vm_control::client::do_input_remove;
+ use vm_control::client::do_modify_battery;
+ #[cfg(feature = "pci-hotplug")]
+ use vm_control::client::do_net_add;
+@@ -323,6 +327,41 @@ fn modify_vfio(cmd: cmdline::VfioCrosvmCommand) -> std::result::Result<(), ()> {
+     Ok(())
+ }
+ 
++#[cfg(feature = "pci-hotplug")]
++fn modify_virtio_input(cmd: cmdline::InputCommand) -> std::result::Result<(), ()> {
++    match cmd.command {
++        cmdline::InputSubCommand::Add(c) => {
++            // FIXME: Remove this
++            info!(
++                "input hotplug request: add evdev_path={} socket={}",
++                c.evdev_path.display(),
++                c.socket_path
++            );
++            let bus = do_input_add(&c.evdev_path, c.socket_path).map_err(|e| {
++                error!("Input device add failed: {:?}", &e);
++            })?;
++            info!(
++                "Input device {} plugged to PCI bus {}",
++                &c.evdev_path.display(),
++                bus
++            );
++        }
++        cmdline::InputSubCommand::Remove(c) => {
++            // FIXME: remove prints
++            info!(
++                "input hotplug request: remove bus={} socket={}",
++                c.bus, c.socket_path
++            );
++            do_input_remove(c.bus, &c.socket_path).map_err(|e| {
++                error!("Input device remove failed: {:?}", &e);
++            })?;
++            info!("Input device removed");
++        }
++    };
++
++    Ok(())
++}
++
+ #[cfg(feature = "pci-hotplug")]
+ fn modify_virtio_net(cmd: cmdline::VirtioNetCommand) -> std::result::Result<(), ()> {
+     match cmd.command {
+@@ -874,6 +913,10 @@ fn crosvm_main<I: IntoIterator<Item = String>>(args: I) -> Result<CommandStatus>
+                     CrossPlatformCommands::Gpe(cmd) => {
+                         inject_gpe(cmd).map_err(|_| anyhow!("gpe subcommand failed"))
+                     }
++                    #[cfg(feature = "pci-hotplug")]
++                    CrossPlatformCommands::Input(cmd) => {
++                        modify_virtio_input(cmd).map_err(|_| anyhow!("input subcommand failed"))
++                    }
+                     CrossPlatformCommands::Usb(cmd) => {
+                         modify_usb(cmd).map_err(|_| anyhow!("usb subcommand failed"))
+                     }
+diff --git a/vm_control/src/client.rs b/vm_control/src/client.rs
+index dc67f1af7f92..74b0641823e3 100644
+--- a/vm_control/src/client.rs
++++ b/vm_control/src/client.rs
+@@ -28,6 +28,8 @@ pub use crate::sys::handle_request_with_timeout;
+ use crate::BatControlCommand;
+ use crate::BatControlResult;
+ use crate::BatteryType;
++#[cfg(feature = "pci-hotplug")]
++use crate::InputControlCommand;
+ #[cfg(feature = "audio")]
+ use crate::SndControlCommand;
+ use crate::SwapCommand;
+@@ -122,6 +124,54 @@ pub fn do_net_remove<T: AsRef<Path> + std::fmt::Debug>(
+     anyhow::bail!("Unsupported: pci-hotplug feature disabled");
+ }
+ 
++#[cfg(feature = "pci-hotplug")]
++/// Send a `VmRequest` for input hotplug that expects `VmResponse::Ok`.
++pub fn do_input_add<T: AsRef<Path> + std::fmt::Debug>(
++    dev_path: &Path,
++    socket_path: T,
++) -> AnyHowResult<u8> {
++    let request = VmRequest::HotPlugInputCommand(InputControlCommand::AddEvdev {
++        path: dev_path.to_path_buf(),
++    });
++    let response = handle_request(&request, socket_path).map_err(|()| anyhow!("socket error: "))?;
++    match response {
++        VmResponse::PciHotPlugResponse { bus } => Ok(bus),
++        e => Err(anyhow!("Unexpected response: {:#}", e)),
++    }
++}
++
++#[cfg(not(feature = "pci-hotplug"))]
++/// Send a `VmRequest` for input hotplug that expects `VmResponse::Ok`.
++pub fn do_input_add<T: AsRef<Path> + std::fmt::Debug>(
++    _dev_path: &Path,
++    _socket_path: T,
++) -> AnyHowResult<u8> {
++    anyhow::bail!("Unsupported: pci-hotplug feature disabled");
++}
++
++#[cfg(feature = "pci-hotplug")]
++/// Send a `VmRequest` for input hot-unplug that expects `VmResponse::Ok`.
++pub fn do_input_remove<T: AsRef<Path> + std::fmt::Debug>(
++    bus: u8,
++    socket_path: T,
++) -> AnyHowResult<()> {
++    let request = VmRequest::HotPlugInputCommand(InputControlCommand::RemoveEvdev { bus });
++    let response = handle_request(&request, socket_path).map_err(|()| anyhow!("socket error: "))?;
++    match response {
++        VmResponse::Ok => Ok(()),
++        e => Err(anyhow!("Unexpected response: {:#}", e)),
++    }
++}
++
++#[cfg(not(feature = "pci-hotplug"))]
++/// Send a `VmRequest` for input hot-unplug that expects `VmResponse::Ok`.
++pub fn do_input_remove<T: AsRef<Path> + std::fmt::Debug>(
++    _bus: u8,
++    _socket_path: T,
++) -> AnyHowResult<()> {
++    anyhow::bail!("Unsupported: pci-hotplug feature disabled");
++}
++
+ pub fn do_usb_attach<T: AsRef<Path> + std::fmt::Debug>(
+     socket_path: T,
+     dev_path: &Path,
+diff --git a/vm_control/src/lib.rs b/vm_control/src/lib.rs
+index 3eb3cf7852d5..c8bfd1cae983 100644
+--- a/vm_control/src/lib.rs
++++ b/vm_control/src/lib.rs
+@@ -1537,6 +1537,14 @@ pub struct HotPlugDeviceInfo {
+     pub hp_interrupt: bool,
+ }
+ 
++/// Used for VM to hotplug virtio-input devices.
++#[cfg(feature = "pci-hotplug")]
++#[derive(Serialize, Deserialize, Debug, Clone)]
++pub enum InputControlCommand {
++    AddEvdev { path: PathBuf },
++    RemoveEvdev { bus: u8 },
++}
++
+ /// Message for communicating a suspend or resume to the virtio-pvclock device.
+ #[derive(Serialize, Deserialize, Debug, Clone)]
+ pub enum PvClockCommand {
+@@ -1619,6 +1627,9 @@ pub enum VmRequest {
+     /// Command to add/remove network tap device as virtio-pci device
+     #[cfg(feature = "pci-hotplug")]
+     HotPlugNetCommand(NetControlCommand),
++    /// Command to add/remove host evdev nodes as virtio-pci input devices
++    #[cfg(feature = "pci-hotplug")]
++    HotPlugInputCommand(InputControlCommand),
+     /// Command to Snapshot devices
+     Snapshot(SnapshotCommand),
+     /// Register for event notification
+@@ -2346,6 +2357,10 @@ impl VmRequest {
+             VmRequest::HotPlugNetCommand(ref _net_cmd) => {
+                 VmResponse::ErrString("hot plug not supported".to_owned())
+             }
++            #[cfg(feature = "pci-hotplug")]
++            VmRequest::HotPlugInputCommand(ref _input_cmd) => {
++                VmResponse::ErrString("hot plug not supported".to_owned())
++            }
+             VmRequest::Snapshot(SnapshotCommand::Take {
+                 ref snapshot_path,
+                 compress_memory,
+-- 
+2.54.0
+

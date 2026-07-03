@@ -1,0 +1,53 @@
+From f215f9166c31e99a35ef80691dcb767c6473d047 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Markku=20Ahvenj=C3=A4rvi?= <mankku@gmail.com>
+Date: Fri, 26 Jun 2026 10:36:23 +0300
+Subject: [PATCH 10/10] WIP: Do not advertise hotplug devices in ACPI VIOT
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+This fixes virtio-iommu probe with 6.18 kernel.
+
+Signed-off-by: Markku Ahvenjärvi <mankku@gmail.com>
+---
+ devices/src/virtio/iommu.rs | 17 ++---------------
+ 1 file changed, 2 insertions(+), 15 deletions(-)
+
+diff --git a/devices/src/virtio/iommu.rs b/devices/src/virtio/iommu.rs
+index 666e75dccf79..3ecd8c463ddc 100644
+--- a/devices/src/virtio/iommu.rs
++++ b/devices/src/virtio/iommu.rs
+@@ -888,8 +888,8 @@ impl VirtioDevice for Iommu {
+             OEM_REVISION,
+         );
+         viot.append(VirtioIommuViotHeader {
+-            // # of PCI range nodes + 1 virtio-pci node
+-            node_count: (self.endpoints.len() + self.hp_endpoints_ranges.len() + 1) as u16,
++            // Advertise only concrete attachable endpoints in VIOT.
++            node_count: (self.endpoints.len() + 1) as u16,
+             node_offset: (viot.len() + std::mem::size_of::<VirtioIommuViotHeader>()) as u16,
+             ..Default::default()
+         });
+@@ -916,19 +916,6 @@ impl VirtioDevice for Iommu {
+             });
+         }
+ 
+-        for endpoints_range in self.hp_endpoints_ranges.iter() {
+-            let (endpoint_start, endpoint_end) = endpoints_range.clone().into_inner();
+-            viot.append(VirtioIommuViotPciRangeNode {
+-                type_: VIRTIO_IOMMU_VIOT_NODE_PCI_RANGE,
+-                length: size_of::<VirtioIommuViotPciRangeNode>() as u16,
+-                endpoint_start,
+-                bdf_start: endpoint_start as u16,
+-                bdf_end: endpoint_end as u16,
+-                output_node: iommu_offset as u16,
+-                ..Default::default()
+-            });
+-        }
+-
+         sdts.push(viot);
+         Ok(())
+     }
+-- 
+2.54.0
+

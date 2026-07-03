@@ -1,0 +1,65 @@
+From b9e2b62b338f9e2479b3c0fdc24302e87cff93b2 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Markku=20Ahvenj=C3=A4rvi?= <mankku@gmail.com>
+Date: Fri, 5 Jun 2026 14:37:31 +0300
+Subject: [PATCH 06/10] WIP: More Intel GPU debug
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Markku Ahvenjärvi <mankku@gmail.com>
+---
+ devices/src/pci/vfio_pci.rs |  3 ++-
+ devices/src/vfio.rs         | 12 +++++++-----
+ 2 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/devices/src/pci/vfio_pci.rs b/devices/src/pci/vfio_pci.rs
+index 8592e24f4bae..7999661fda3c 100644
+--- a/devices/src/pci/vfio_pci.rs
++++ b/devices/src/pci/vfio_pci.rs
+@@ -50,6 +50,7 @@ use crate::pci::acpi::DeviceVcfgRegister;
+ use crate::pci::acpi::DsmMethod;
+ use crate::pci::acpi::PowerResourceMethod;
+ use crate::pci::acpi::SHM_OFFSET;
++use crate::pci::acpi::SHM_SIZE;
+ use crate::pci::msi::MsiConfig;
+ use crate::pci::msi::MsiStatus;
+ use crate::pci::msi::PCI_MSI_FLAGS;
+@@ -2161,7 +2162,7 @@ impl PciDevice for VfioPciDevice {
+                         }
+                     };
+                     info!("{} DSM request_len={}", self.debug_label(), dsm_len);
+-                    let res = match self.device.acpi_dsm(&args[..dsm_len]) {
++                    let res = match self.device.acpi_dsm(&args[..dsm_len], SHM_SIZE as usize) {
+                         Ok(r) => r,
+                         Err(e) => {
+                             error!(
+diff --git a/devices/src/vfio.rs b/devices/src/vfio.rs
+index 8e00fed512bd..26f895c9f94d 100644
+--- a/devices/src/vfio.rs
++++ b/devices/src/vfio.rs
+@@ -1246,15 +1246,17 @@ impl VfioDevice {
+     }
+ 
+     /// call _DSM from the device's ACPI table
+-    pub fn acpi_dsm(&self, args: &[u8]) -> Result<Vec<u8>> {
+-        let count = args.len();
++    pub fn acpi_dsm(&self, args: &[u8], out_len: usize) -> Result<Vec<u8>> {
++        let count = out_len.max(args.len());
+         let mut dsm = vec_with_array_field::<vfio_acpi_dsm, u8>(count);
+-        dsm[0].argsz = (mem::size_of::<vfio_acpi_dsm>() + mem::size_of_val(args)) as u32;
++        dsm[0].argsz = (mem::size_of::<vfio_acpi_dsm>() + count) as u32;
+         dsm[0].padding = 0;
+         // SAFETY:
+-        // Safe as we allocated enough space to hold args
++        // Safe as we allocated enough space to hold the request prefix and any return payload.
+         unsafe {
+-            dsm[0].args.as_mut_slice(count).clone_from_slice(args);
++            let buf = dsm[0].args.as_mut_slice(count);
++            buf.fill(0);
++            buf[..args.len()].clone_from_slice(args);
+         }
+         // SAFETY:
+         // Safe as we are the owner of self and dsm which are valid value
+-- 
+2.54.0
+
