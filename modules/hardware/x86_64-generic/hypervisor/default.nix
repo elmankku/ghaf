@@ -34,6 +34,9 @@ let
       }
     );
 
+    # Temporarily disable GPU suspend until its kernel patch is rebased.
+    ghaf.services.power-manager.gui.gpuSuspend = lib.mkForce false;
+
     microvm = {
       crosvm = lib.mkIf (config.microvm.hypervisor == "crosvm") {
         extraArgs = [
