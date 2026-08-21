@@ -21,12 +21,9 @@ let
     };
 
   pkvmGuestModule = vmCfg: { config, ... }: {
-    assertions = [
-      {
-        assertion = config.microvm.hypervisor == "crosvm";
-        message = "pKVM-protected guests must use crosvm.";
-      }
-    ];
+    ghaf.virtualization.qemu = lib.mkIf (config.microvm.hypervisor == "qemu") {
+      package = pkgs.pkvm-qemu;
+    };
 
     boot.kernelPackages = pkgs.linuxPackagesFor (
       vmCfg.kernelPackage.override {
@@ -43,6 +40,24 @@ let
           "--protected-vm-without-firmware"
         ];
         package = lib.mkForce cfg.crosvm.package;
+      };
+
+      qemu = lib.mkIf (config.microvm.hypervisor == "qemu") {
+        machine = "q35";
+
+        machineOpts = {
+          kernel-irqchip = "split";
+          confidential-guest-support = "pkvm0";
+        };
+
+        extraArgs = lib.mkAfter [
+          "-object"
+          "pkvm-guest,id=pkvm0"
+          "-bios"
+          "${pkgs.pkvm-qboot}/bios.bin"
+          "-overcommit"
+          "mem-lock=on"
+        ];
       };
     };
   };
