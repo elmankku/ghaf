@@ -13,6 +13,7 @@
       ./definition.nix
       ./x86_64-generic
       ./passthrough
+      ./common/devices.nix
       ./common/kernel.nix
     ];
     hardware-x86_64-host-kernel.imports = [

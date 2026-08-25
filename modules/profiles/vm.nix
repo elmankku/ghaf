@@ -66,6 +66,7 @@ in
         modules = [
           inputs.self.nixosModules.microvm-nix
           inputs.self.nixosModules.netvm-base
+          inputs.self.nixosModules.netvm-features
           {
             nixpkgs = {
               hostPlatform.system = "x86_64-linux";

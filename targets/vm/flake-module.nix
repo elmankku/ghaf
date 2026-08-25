@@ -108,6 +108,20 @@ let
               ];
 
               ghaf = {
+                # The outer QEMU e1000e is the net-vm uplink in pKVM variants.
+                # Leave path empty: the runtime helper resolves its QEMU-assigned
+                # PCI address by vendor/device ID.
+                hardware = {
+                  definition.network.pciDevices = lib.optionals withPkvm [
+                    {
+                      path = "";
+                      vendorId = "8086";
+                      productId = "10d3";
+                    }
+                  ];
+                  passthrough.vhotplug.enable = lib.mkIf withPkvm true;
+                };
+
                 # Propagate the selected host variant to the system VMs.
                 global-config =
                   lib.recursiveUpdate (lib.mapAttrsRecursive (_: v: lib.mkDefault v) lib.ghaf.profiles.${profileName})
@@ -125,6 +139,8 @@ let
 
                 virtualization = {
                   pkvm.enable = withPkvm;
+                  # pKVM device passthrough
+                  vmConfig.sysvms.netvm.vmm = lib.mkIf withPkvm "crosvm";
 
                   microvm-host = {
                     enable = true;
@@ -321,16 +337,20 @@ let
                 ];
                 tpm.enable = true;
 
-                # QEMU options when executing pKVM within KVM
-                qemu.options = lib.optionals withPkvm [
-                  "-machine q35,mem-merge=off,accel=kvm,kernel-irqchip=split"
-                  "-device intel-iommu,aw-bits=48,device-iotlb=on,intremap=on"
-                  "-overcommit cpu-pm=off"
-                  # Paravirtualizations must be disabled
-                  "-cpu host,+kvm-pv-enforce-cpuid,+vmx,+waitpkg,+ssse3,+tsc,+nx,+x2apic,+hypervisor,-kvm-pv-ipi,-kvm-pv-tlb-flush,-kvm-pv-unhalt,-kvm-pv-sched-yield,-kvm-asyncpf-int,-kvm-pv-eoi"
-                  "-device e1000,netdev=net0"
-                  "-netdev user,id=net0"
-                ];
+                qemu = lib.optionalAttrs withPkvm {
+                  networkingOptions = lib.mkForce [
+                    "-device e1000e,netdev=user.0"
+                    "-netdev user,id=user.0,hostfwd=tcp::8022-:22,\"$QEMU_NET_OPTS\""
+                  ];
+                  # QEMU options when executing pKVM within KVM
+                  options = [
+                    "-machine q35,mem-merge=off,accel=kvm,kernel-irqchip=split"
+                    "-device intel-iommu,aw-bits=48,device-iotlb=on,intremap=on"
+                    "-overcommit cpu-pm=off"
+                    # Paravirtualizations must be disabled
+                    "-cpu host,+kvm-pv-enforce-cpuid,+vmx,+waitpkg,+ssse3,+tsc,+nx,+x2apic,+hypervisor,-kvm-pv-ipi,-kvm-pv-tlb-flush,-kvm-pv-unhalt,-kvm-pv-sched-yield,-kvm-asyncpf-int,-kvm-pv-eoi"
+                  ];
+                };
               };
             }
           )
