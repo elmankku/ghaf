@@ -34,6 +34,7 @@ let
   vm =
     format: variant: withGraphics:
     let
+      profileName = if lib.hasPrefix "release" variant then "release" else "debug";
       hostConfiguration = lib.nixosSystem {
         specialArgs = {
           inherit (self) lib;
@@ -107,6 +108,13 @@ let
               ];
 
               ghaf = {
+                # Propagate the selected host variant to the system VMs.
+                global-config =
+                  lib.recursiveUpdate (lib.mapAttrsRecursive (_: v: lib.mkDefault v) lib.ghaf.profiles.${profileName})
+                    # nogui variants intentionally disable host GIVC, so guests must not
+                    # request GIVC TLS volumes that the host will not generate.
+                    { givc.enable = withGraphics; };
+
                 # Enable the VM profile (creates netvmBase, audiovmBase, adminvmBase, mkAppVm)
                 profiles.vm.enable = true;
 
@@ -253,8 +261,8 @@ let
                   graphics = {
                     enable = withGraphics;
                   };
-                  release.enable = lib.hasPrefix "release" variant;
-                  debug.enable = lib.hasPrefix "debug" variant;
+                  release.enable = profileName == "release";
+                  debug.enable = profileName == "debug";
                 };
               };
 
